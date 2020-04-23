@@ -16,13 +16,17 @@ An example use of the tool is based on automatically generated synaptic link dat
 2. Install circuitmap in whichever python environment is running
 CATMAID with `pip install -e .`
 
-3. Run `python manage.py migrate` (in the CATMAID folder) to create the circuitmap models.
+3. Make sure your CATMAID instance has RabbitMQ and Celery enabled, it's needed
+   to fetch synapses asynchronously. The [documentation](https://catmaid.readthedocs.io/en/stable/celery.html)
+   has more information about this.
 
-4. Run `python manage.py collectstatic -l`  (in the CATMAID folder) to pick up
+4. Run `python manage.py migrate` (in the CATMAID folder) to create the circuitmap models.
+
+5. Run `python manage.py collectstatic -l`  (in the CATMAID folder) to pick up
 circuitmap's static files.
 
-5. The synaptic link data needs to be ingested into the generated
+6. The synaptic link data needs to be ingested into the generated
 Postgres table `circuitmap_synlinks` from the [SQL database dump](https://github.com/funkelab/synful_fafb).
 
-6. A few additional settings have to be configured to interoperate with segmentation
+7. A few additional settings have to be configured to interoperate with segmentation
 data and CATMAID import procedure (see `circuitmap/control/settings.py.example`).
