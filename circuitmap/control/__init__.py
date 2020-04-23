@@ -595,7 +595,7 @@ def import_autoseg_skeleton_with_synapses(project_id, segment_id):
 
             # insert root node
             parent_id = ""
-            n = g2.node[root_skeleton_id]
+            n = g2.nodes[root_skeleton_id]
             query = """INSERT INTO treenode (id, project_id, location_x, location_y, location_z, editor_id,
                         user_id, skeleton_id, radius) VALUES ({},{},{},{},{},{},{},{},{}) ON CONFLICT (id) DO NOTHING;
                 """.format(
@@ -615,7 +615,7 @@ def import_autoseg_skeleton_with_synapses(project_id, segment_id):
 
             # insert all chidren
             for parent_id, skeleton_node_id in new_tree.edges(data=False):
-                n = g2.node[skeleton_node_id]
+                n = g2.nodes[skeleton_node_id]
                 query = """INSERT INTO treenode (id,project_id, location_x, location_y, location_z, editor_id,
                             user_id, skeleton_id, radius, parent_id) VALUES ({},{},{},{},{},{},{},{},{},{}) ON CONFLICT (id) DO NOTHING;
                     """.format(
