@@ -48,7 +48,7 @@ the front-end happens through this widget, this is how it can be opened:
    Should it be hidden due to limited screen space, it is also possible to use
    the *Open Widget* dialog by using the first icon button in the top toolbar:
    ![Open Widget icon](sphinx-doc/source/_static/newwindow.svg), or
-   alternatively Ctrl + Space) and searching for "Circuit Map". Enter or
+   alternatively Ctrl + Space, and searching for "Circuit Map". Enter or
    doubliclick on the result row will open a new *Circuit Map widget*.
 
 Circuit Map can operate in two modes: it can fetch a) all synapses for the
@@ -64,4 +64,21 @@ TBA
 
 ### Fetching the segmentation fragment at a location plus its synapses
 
-TBA
+If no existing neuron is already present at a location of interest, Circuit Map
+can be used to fetch a segmentation based skeleton fragment along with synapses
+connected to it. The widget will use the center of the field of view in the
+active stack viewer as query location. This can be easier to see by enabling
+reference lines that cross at the center of the view. This can be done by
+
+1. Opening the *Settings Widget* by clicking on the Gear icon in the top toolbar (third from left).
+2. Find the "Display reference lines" option in the "Stack view" section and enable.
+
+When ready, press <kbd>Fetch autoseg skeleton and synapses at location</kbd> in
+the *Circuit Map widget*. This will kick off a background task on the server
+that fetches the closest segmentation fragment along with its synapses.
+Typically, this process takes not longer than a few seconds. Depending on the
+setup of the CATMAID instance, the front-end will refresh automatically, once
+the data is ready (if [WebSockets/ASGI](https://catmaid.readthedocs.io/en/stable/websockets.html) is
+enabled). Alterantively the current view can be reloaded by clicking on the
+*Tracing Tool* icon. After a refresh, the new skeleton should appear and can be
+used like any other skeleton.
