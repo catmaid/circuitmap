@@ -70,7 +70,7 @@ To find all synapses for a particular skeleton/neuron, the respective skeleton
 has to be selected first in CATMAID. A straight-forward way to find neurons is
 by opening the *Neuron Navigator*:
 
-1. Either click the compass icon in the toolbar or search for "Navigator" in the
+1. Either click the compass icon in the toolbar (![Neuron Navigator icon](sphinx-doc/source/_static/neuron_navigator.svg)) or search for "Navigator" in the
    *Open Widget* dialog (see above). 
 2. Double-click on "All neurons" and double-click a neuron that you want to add
    synapses too.
@@ -92,7 +92,7 @@ connected to it. The widget will use the center of the field of view in the
 active stack viewer as query location. This can be easier to see by enabling
 reference lines that cross at the center of the view. This can be done by
 
-1. Opening the *Settings Widget* by clicking on the Gear icon in the top toolbar (third from left).
+1. Opening the *Settings Widget* by clicking on the gear icon in the top toolbar (![Settings Widget icon](sphinx-doc/source/_static/settings.svg)).
 2. Find the "Display reference lines" option in the "Stack view" section and enable.
 
 When ready, press <kbd>Fetch autoseg skeleton and synapses at location</kbd> in
@@ -123,7 +123,7 @@ needs to be at least as large as defined in the two threshold input fields in th
 
 - It might be useful to monitor the number of synapses as well as the visual
   representation befor and after synapses are added. To so, open the *3D Viewer*
-  ("3D" icon) and add the active skeletonto the *Selection Table* that was opened
+  (![Settings Widget icon](sphinx-doc/source/_static/3d-view-webgl.svg)) and add the active skeletonto the *Selection Table* that was opened
   alongside the 3D Viewer (right below it) by selection "Active skeleton" as *From*
   and then click the <kbd>Append</kbd> button. Synapses are displayed by default.
   To get basic synapse counts, click on <kbd>Measure</kbd> in the *Selection Table*.
