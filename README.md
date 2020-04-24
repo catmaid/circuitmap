@@ -66,7 +66,23 @@ described in more detail below.
 
 ### Fetching synapses for the active skeleton.
 
-TBA
+To find all synapses for a particular skeleton/neuron, the respective skeleton
+has to be selected first in CATMAID. A straight-forward way to find neurons is
+by opening the *Neuron Navigator*:
+
+1. Either click the compass icon in the toolbar or search for "Navigator" in the
+   *Open Widget* dialog (see above). 
+2. Double-click on "All neurons" and double-click a neuron that you want to add
+   synapses too.
+3. Click on <kbd>Go to nearest node</kbd> to select the skeleton.
+
+With a skeleton selected, go back to the *Circuit Map* widget and press the
+<kbd>Fetch synapses for active neuron</kbd>. This will queue an asynchronous task
+on the server which will fetch all synapses for the active skeletons. Depending
+on the setup of the CATMAID instance, the front-end will refresh automatically,
+once the data is ready (if [WebSockets/ASGI](https://catmaid.readthedocs.io/en/stable/websockets.html)
+is enabled). Alternatively the current view can be reloaded by clicking on the
+*Tracing Tool* icon.
 
 ### Fetching the segmentation fragment at a location plus its synapses
 
@@ -82,12 +98,9 @@ reference lines that cross at the center of the view. This can be done by
 When ready, press <kbd>Fetch autoseg skeleton and synapses at location</kbd> in
 the *Circuit Map widget*. This will kick off a background task on the server
 that fetches the closest segmentation fragment along with its synapses.
-Typically, this process takes not longer than a few seconds. Depending on the
-setup of the CATMAID instance, the front-end will refresh automatically, once
-the data is ready (if [WebSockets/ASGI](https://catmaid.readthedocs.io/en/stable/websockets.html) is
-enabled). Alternatively the current view can be reloaded by clicking on the
-*Tracing Tool* icon. After a refresh, the new skeleton should appear and can be
-used like any other skeleton.
+Typically, this process takes not longer than a few seconds. After a refresh
+(either automatically if set up or manually by reloading the *Tracing Tool*,
+the new skeleton should appear and can be used like any other skeleton.
 
 ### Fetching partner fragments
 
