@@ -193,4 +193,15 @@
     creator: CircuitmapWidget
   });
 
+  // Inject Circuit Map into Tracing Tool
+  CATMAID.TracingTool.actions.push(new CATMAID.Action({
+    helpText: "Add synapses and fragments based on segmentation data",
+    buttonID: "data_button_circuitmap",
+    buttonName: 'circuitmap',
+    run: function (e) {
+      WindowMaker.create('circuitmap-widget');
+      return true;
+    }
+  }));
+
 })(CATMAID);
