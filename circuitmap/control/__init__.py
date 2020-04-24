@@ -10,11 +10,13 @@ import scipy.spatial as sp
 import fafbseg
 import networkx as nx
 import sqlite3
+import logging
 
 from cloudvolume import CloudVolume
 from cloudvolume.datasource.precomputed.skeleton.sharded import ShardedPrecomputedSkeletonSource
 
 from celery.task import task
+from celery.utils.log import get_task_logger
 
 from .settings import *
 
@@ -28,10 +30,13 @@ cols = ["id", "pre_x","pre_y","pre_z","post_x","post_y","post_z","scores",
             "prob_count","prob_max","prob_mean","prob_min","prob_sum",
             "segmentid_post","segmentid_pre"]
 
+task_logger = get_task_logger(__name__)
+
 
 def get_links(cursor, segment_id, where='segmentid_pre', table='circuitmap_synlinks'):
     #print('execute')
-    cursor.execute('SELECT * from {} where {} = {};'.format(table, where, segment_id))
+    query = 'SELECT * from {} where {} = {};'.format(table, where, segment_id)
+    cursor.execute(query)
     #print('fetch all')
     pre_links = cursor.fetchall()
     #print('fetch from db done')
@@ -60,20 +65,20 @@ def load_subgraph(cursor, start_segment_id, order = 0):
     g = nx.DiGraph()
         
     for ordern in range(order+1):
-        if DEBUG: print('order', ordern, 'need to fetch', len(fetch_segments), 'segments')
+        task_logger.debug(f'order {ordern} need to fetch {len(fetch_segments)} segments')
         for i, segment_id in enumerate(list(fetch_segments)):
             
-            if DEBUG: print('process segment', i, 'with segment_id', segment_id)
+            task_logger.debug(f'process segment {i} with segment_id {segment_id}')
 
-            if DEBUG: print('retrieve pre_links')
+            task_logger.debug('retrieve pre_links')
             pre_links = get_links(cursor, segment_id, where='segmentid_pre')
 
-            if DEBUG: print('retrieve post_links')
+            task_logger.debug('retrieve post_links')
             post_links = get_links(cursor, segment_id, where='segmentid_post')
 
-            if DEBUG: print('build graph ...')
+            task_logger.debug('build graph ...')
 
-            if DEBUG: print('number of pre_links', len(pre_links))
+            task_logger.debug(f'number of pre_links {len(pre_links)}')
             for idx, r in pre_links.iterrows():
                 from_id = int(r['segmentid_pre'])
                 to_id = int(r['segmentid_post'])
@@ -83,7 +88,7 @@ def load_subgraph(cursor, start_segment_id, order = 0):
                 else:
                     g.add_edge(from_id, to_id, count= 1)
 
-            if DEBUG: print('number of post_links', len(post_links))
+            task_logger.debug(f'number of post_links {len(post_links)}')
             for idx, r in post_links.iterrows():
                 from_id = int(r['segmentid_pre'])
                 to_id = int(r['segmentid_post'])
@@ -148,10 +153,10 @@ def get_synapses(request, segment_id):
     #conn = sqlite3.connect(SQLITE3_DB_PATH)
     cur = connection.cursor()
 
-    if DEBUG: print('retrieve pre_links')
+    task_logger.debug('retrieve pre_links')
     pre_links = get_links(cursor, segment_id, where='segmentid_pre')
 
-    if DEBUG: print('retrieve post_links')
+    task_logger.debug('retrieve post_links')
     post_links = get_links(cursor, segment_id, where='segmentid_post')
 
     return JsonResponse({'pre_links': pre_links.to_json(), 'post_links': post_links.to_json()})
@@ -173,7 +178,7 @@ def test(request, project_id=None):
 
 @task()
 def testtask():
-    print('testtask')
+    task_logger.info('testtask')
 
 
 @api_view(['POST'])
@@ -200,19 +205,19 @@ def fetch_synapses(request: HttpRequest, project_id=None):
         try:
             segment_id = int(cv[x//2,y//2,z,0][0][0][0][0])
         except Exception as ex:
-            if DEBUG: print('Exception occurred: {}'.format(ex))
+            task_logger.debug('Exception occurred: {}'.format(ex))
             segment_id = None
             return JsonResponse({'project_id': pid, 'msg': 'No segment found at this location.', 'ex': ex})
 
         if segment_id is None or segment_id == 0:
             return JsonResponse({'project_id': pid, 'msg': 'No segment found at this location.'})
         else:
-            if DEBUG: print('spawn task: import_autoseg_skeleton_with_synapses')
+            task_logger.debug('spawn task: import_autoseg_skeleton_with_synapses')
 
             task = import_autoseg_skeleton_with_synapses.delay(pid, 
                 segment_id)
 
-            if DEBUG: print('call: import_upstream_downstream_partners')
+            task_logger.debug('call: import_upstream_downstream_partners')
             task  = import_upstream_downstream_partners.delay(segment_id, fetch_upstream, fetch_downstream,
                 pid, upstream_syn_count, downstream_syn_count)
 
@@ -229,37 +234,37 @@ def fetch_synapses(request: HttpRequest, project_id=None):
 def import_upstream_downstream_partners(segment_id, fetch_upstream, fetch_downstream, 
 	pid, upstream_syn_count, downstream_syn_count):
     try:
-        print('task: import_upstream_downstream_partners start', segment_id)
+        task_logger.info(f'task: import_upstream_downstream_partners start {segment_id}')
 
         # get all partners partners
         #conn = sqlite3.connect(SQLITE3_DB_PATH)
         cur = connection.cursor()
 
-        if DEBUG: print('load subgraph')
+        task_logger.debug('load subgraph')
         g = load_subgraph(cur, segment_id)
 
-        if DEBUG: print('start fetching ...')
+        task_logger.debug('start fetching ...')
         if fetch_upstream:
             for partner_segment_id in get_presynaptic_skeletons(g, segment_id, synaptic_count_threshold = upstream_syn_count):
-                if DEBUG: print('spawn task for presynaptic segment_id', partner_segment_id)
+                task_logger.debug(f'spawn task for presynaptic segment_id {partner_segment_id}')
                 task = import_autoseg_skeleton_with_synapses.delay(pid, 
                     partner_segment_id)
 
         if fetch_downstream:
             for partner_segment_id in get_postsynaptic_skeletons(g, segment_id, synaptic_count_threshold = downstream_syn_count):
-                if DEBUG: print('spawn task for postsynaptic segment_id', partner_segment_id)
+                task_logger.debug(f'spawn task for postsynaptic segment_id {partner_segment_id}')
                 task = import_autoseg_skeleton_with_synapses.delay(pid, 
                     partner_segment_id)
 
     except Exception as ex:
-        print('exception import_upstream_downstream_partners: ', ex)
+        task_logger.error(f'Exception import_upstream_downstream_partners: {ex}')
 
 
 @task()
 def import_synapses_for_existing_skeleton(project_id, distance_threshold, active_skeleton_id,
     autoseg_segment_id = None):
     
-    if DEBUG: print('task: import_synapses_for_existing_skeleton started')
+    task_logger.debug('task: import_synapses_for_existing_skeleton started')
 
     try:
         # retrieve skeleton with all nodes directly from the database
@@ -274,28 +279,36 @@ def import_synapses_for_existing_skeleton(project_id, distance_threshold, active
         skeleton = pd.DataFrame.from_records(cursor.fetchall(), 
             columns=['id', 'parent_id', 'x', 'y', 'z'])
 
-        if DEBUG: print('skeleton shape', len(skeleton))
+        task_logger.debug(f'skeleton shape {len(skeleton)}')
 
         # accessing the most recent autoseg data
         fafbseg.use_google_storage(GOOGLE_SEGMENTATION_STORAGE)
+        task_logger.debug(f'Using google storage {GOOGLE_SEGMENTATION_STORAGE}')
 
         if not autoseg_segment_id is None:
-            if DEBUG: print('active skeleton {} is derived from segment id {}'.format(active_skeleton_id, autoseg_segment_id))
+            task_logger.debug('active skeleton {} is derived from segment id {}'.format(active_skeleton_id, autoseg_segment_id))
             overlapping_segmentids = set([int(autoseg_segment_id)])
         else:
             # retrieve segment ids
+            task_logger.debug('getting autoseg segments')
             segment_ids = fafbseg.segmentation.get_seg_ids(skeleton[['x','y','z']])
 
-            if DEBUG:
-                print('found segment ids for skeleton: ', segment_ids)
+            task_logger.debug(f'found segment ids for skeleton: {segment_ids}')
 
             overlapping_segmentids = set()
             for seglist in segment_ids:
                 for s in seglist:
                     overlapping_segmentids.add(s)
+            task_logger.debug(f'found {len(overlapping_segmentids)} overlapping segments')
+
+            # Debug: explicitly remove segments with ID=0, because there seem
+            # to be problems with the data.
+            overlapping_segmentids.remove(0)
+            task_logger.debug('Removed segments with zero-ID')
         
         # store skeleton in kdtree for fast distance computations
         tree = sp.KDTree( skeleton[['x', 'y', 'z']] )
+        task_logger.debug('KD tree built for skeleton')
 
         connectors = {}
         treenode_connector = {}
@@ -305,17 +318,18 @@ def import_synapses_for_existing_skeleton(project_id, distance_threshold, active
         cur = connection.cursor()
 
         # retrieve synaptic links for each autoseg skeleton
-        for segment_id in list(overlapping_segmentids):
-            if DEBUG: print('process segment: ', segment_id)
+        # todo: list shouldn't be needed
+        task_logger.debug('iterating overlapping segments')
+        for segment_id in overlapping_segmentids:
+            task_logger.debug(f'process segment: {segment_id}')
             all_pre_links.append(get_links(cur, segment_id, 'segmentid_pre'))
             all_post_links.append(get_links(cur, segment_id, 'segmentid_post'))
             
         all_pre_links_concat = pd.concat(all_pre_links)
         all_post_links_concat = pd.concat(all_post_links)
 
-        if DEBUG:
-            print('total nr prelinks collected', len(all_pre_links_concat))
-            print('total nr postlinks collected', len(all_post_links_concat))
+        task_logger.debug(f'total nr prelinks collected: {len(all_pre_links_concat)}')
+        task_logger.debug(f'total nr postlinks collected: {len(all_post_links_concat)}')
 
         # for all pre/post links, if clust_con_offset > 0, retrieve the respective
         # links and use the presynaptic location as representative location for the link
@@ -325,7 +339,7 @@ def import_synapses_for_existing_skeleton(project_id, distance_threshold, active
         else:
             all_pre_links_concat_remap_connector = get_links_from_offset(cursor, tmp_list)
             all_pre_links_concat_remap_connector = all_pre_links_concat_remap_connector.set_index('offset')
-            if DEBUG: print('total nr representative prelinks collected', len(all_pre_links_concat_remap_connector))
+            task_logger.debug(f'total nr representative prelinks collected: {len(all_pre_links_concat_remap_connector)}')
 
         tmp_list = all_post_links_concat[all_post_links_concat['clust_con_offset']>0]['clust_con_offset'].tolist()
         if len(tmp_list) == 0:
@@ -333,10 +347,10 @@ def import_synapses_for_existing_skeleton(project_id, distance_threshold, active
         else:
             all_post_links_concat_remap_connector = get_links_from_offset(cursor, tmp_list)
             all_post_links_concat_remap_connector = all_post_links_concat_remap_connector.set_index('offset')
-            if DEBUG: print('total nr representative postlinks collected', len(all_post_links_concat_remap_connector))
+            task_logger.debug(f'total nr representative postlinks collected: {len(all_post_links_concat_remap_connector)}')
           
         if len(all_pre_links_concat) > 0:
-            if DEBUG: print('find closest distances to skeleton for pre')
+            task_logger.debug('find closest distances to skeleton for pre')
             res = tree.query(all_pre_links_concat[['pre_x','pre_y', 'pre_z']])
             all_pre_links_concat['dist2'] = res[0]
             all_pre_links_concat['skeleton_node_id_index'] = res[1]
@@ -355,7 +369,7 @@ def import_synapses_for_existing_skeleton(project_id, distance_threshold, active
                 if r['clust_con_offset'] > 0 and not all_pre_links_concat_remap_connector is None:
                     l = all_pre_links_concat_remap_connector.loc[r['clust_con_offset']]
                     connector_id = CONNECTORID_OFFSET + int(r['clust_con_offset']) * 10 
-                    if DEBUG: print('found representative connector (prelink) {} for skid {}'.format(connector_id, skid))
+                    task_logger.debug('found representative connector (prelink) {} for skid {}'.format(connector_id, skid))
                     if not connector_id in connectors:
                         connectors[connector_id] = l.to_dict()
                 else:
@@ -369,7 +383,7 @@ def import_synapses_for_existing_skeleton(project_id, distance_threshold, active
                     (skid, connector_id)] = {'type': 'presynaptic_to'}
 
         if len(all_post_links_concat) > 0:
-            if DEBUG: print('find closest distances to skeleton for post')
+            task_logger.debug('find closest distances to skeleton for post')
             res = tree.query(all_post_links_concat[['post_x','post_y', 'post_z']])
             all_post_links_concat['dist2'] = res[0]
             all_post_links_concat['skeleton_node_id_index'] = res[1]
@@ -388,7 +402,7 @@ def import_synapses_for_existing_skeleton(project_id, distance_threshold, active
                 if r['clust_con_offset'] > 0 and not all_post_links_concat_remap_connector is None:
                     l = all_post_links_concat_remap_connector.loc[r['clust_con_offset']]
                     connector_id = CONNECTORID_OFFSET + int(r['clust_con_offset']) * 10 
-                    if DEBUG: print('found representative connector (postlink) {} for skid {}'.format(connector_id, skid))
+                    task_logger.debug('found representative connector (postlink) {} for skid {}'.format(connector_id, skid))
                     if not connector_id in connectors:
                         connectors[connector_id] = l.to_dict()
                 else:
@@ -400,7 +414,7 @@ def import_synapses_for_existing_skeleton(project_id, distance_threshold, active
                     (skid, connector_id)] = {'type': 'postsynaptic_to'}
 
         # insert into database
-        if DEBUG: print('fetch relations')
+        task_logger.debug('fetch relations')
         cursor.execute("SELECT id,relation_name from relation where project_id = {project_id};".format(project_id=project_id))
         res = cursor.fetchall()
         relations = dict([(v,u) for u,v in res])
@@ -414,7 +428,7 @@ def import_synapses_for_existing_skeleton(project_id, distance_threshold, active
             cursor.execute(query)
 
         # insert connectors
-        if DEBUG: print('start inserting connectors')
+        task_logger.debug('start inserting connectors')
         for connector_id, r in connectors.items():
             q = """
         INSERT INTO connector (id, user_id, editor_id, project_id, location_x, location_y, location_z)
@@ -437,17 +451,15 @@ def import_synapses_for_existing_skeleton(project_id, distance_threshold, active
         # TODO: optimize based on scores
         confidence_value = 5
 
-        if DEBUG: print('start insert links')
+        task_logger.debug('start insert links')
         for idx, val in treenode_connector.items():
             skeleton_node_id, connector_id = idx
             q = """
-                INSERT INTO treenode_connector (user_id, project_id, 
-                treenode_id,
-                connector_id,
-                relation_id, 
-                skeleton_id,
-                confidence)
-                            VALUES ({},{},{},{},{},{},{}) ON CONFLICT ON CONSTRAINT treenode_connector_project_id_uniq DO NOTHING;;
+                INSERT INTO treenode_connector (user_id, project_id,
+                    treenode_id, connector_id, relation_id, skeleton_id,
+                    confidence)
+                VALUES ({},{},{},{},{},{},{})
+                ON CONFLICT ON CONSTRAINT treenode_connector_project_id_treenode_id_connector_id_relation DO NOTHING;
                 """.format(
                 DEFAULT_IMPORT_USER,
                 project_id,
@@ -469,15 +481,15 @@ def import_synapses_for_existing_skeleton(project_id, distance_threshold, active
             cursor.execute(q)
 
         if with_multi:
-            #if DEBUG: print('run multiquery. nr queries {}'.format(len(queries))
-            if DEBUG: print('run inserts')
+            #task_logger.debug('run multiquery. nr queries {}'.format(len(queries))
+            task_logger.debug(f'Inserting {len(queries)} synaptic links')
             cursor.execute('\n'.join(queries))
-            if DEBUG: print('multiquery done')
+            task_logger.debug('multiquery done')
 
 
-        if DEBUG: print('task: import_synapses_for_existing_skeleton started: done')
+        task_logger.debug('task: import_synapses_for_existing_skeleton started: done')
     except Exception as ex:
-        print('Exception occurred: {}'.format(ex))
+        task_logger.error(f'Exception occurred: {ex}')
 
 
 @task
@@ -490,22 +502,22 @@ def import_autoseg_skeleton_with_synapses(project_id, segment_id):
             nr_projects = 10 # max number of projects / instance allowed
             return int( int(segment_id) * max_nodes * nr_projects + int(nid) * nr_projects + int(project_id) )
 
-        if DEBUG: print('task: import_autoseg_skeleton_with_synapses started')
+        task_logger.debug('task: import_autoseg_skeleton_with_synapses started')
         cursor = connection.cursor()
 
         # check if skeleton of autoseg segment_id was previously imported
-        if DEBUG: print('check if already imported')
+        task_logger.debug('check if already imported')
         cursor.execute('SELECT id, skeleton_id FROM treenode WHERE project_id = {} and id = {}'.format( \
             int(project_id), mapping_skel_nid(segment_id, 0, int(project_id))))
         res = cursor.fetchone()
-        if DEBUG: print('fetched', res)
+        task_logger.debug(f'fetched: {res}')
 
         if not res is None:
             node_id, skeleton_class_instance_id = res
-            if DEBUG: print('autoseg skeleton was previously imported. skip reimport. (current skeletonid is {})'.format(skeleton_class_instance_id))
+            task_logger.debug('autoseg skeleton was previously imported. skip reimport. (current skeletonid is {})'.format(skeleton_class_instance_id))
         else:        
             # fetch and insert autoseg skeleton at location
-            if DEBUG: print('fetch skeleton for segment_id {}'.format(segment_id))
+            task_logger.debug('fetch skeleton for segment_id {}'.format(segment_id))
             
             #cv = CloudVolume(CLOUDVOLUME_URL, use_https=False, parallel=False)
             #cv.meta.info['skeletons'] = CLOUDVOLUME_SKELETONS
@@ -513,13 +525,13 @@ def import_autoseg_skeleton_with_synapses(project_id, segment_id):
             #cv.skeleton = ShardedPrecomputedSkeletonSource(cv.skeleton.meta, cv.cache, cv.config)
 
             s1 = cv.skeleton.get(int(segment_id))
-            if DEBUG: print('fetched.')
+            task_logger.debug('fetched.')
             nr_of_vertices = len(s1.vertices)
-            if DEBUG: print('number of vertices {} for {}'.format(nr_of_vertices, segment_id))
+            task_logger.debug('number of vertices {} for {}'.format(nr_of_vertices, segment_id))
 
-            if DEBUG: print('autoseg skeleton for {} has {} nodes'.format(segment_id, nr_of_vertices))
+            task_logger.debug('autoseg skeleton for {} has {} nodes'.format(segment_id, nr_of_vertices))
             
-            if DEBUG: print('generate graph for skeleton')
+            task_logger.debug('generate graph for skeleton')
             g=nx.Graph()
             attrs = []
             for idx in range(nr_of_vertices):
@@ -534,10 +546,10 @@ def import_autoseg_skeleton_with_synapses(project_id, segment_id):
 
             # TODO: check if it skeleton already imported
             # this check depends on the chosen implementation
-            if DEBUG: print('check number of connected components')
+            task_logger.debug('check number of connected components')
             nr_components = nx.number_connected_components(g)
             if nr_components > 1:
-                if DEBUG: print('more than one component in skeleton graph. use only largest component')
+                task_logger.debug('more than one component in skeleton graph. use only largest component')
                 graph = max(nx.connected_component_subgraphs(g), key=len)
             else:
                 graph = g
@@ -547,7 +559,7 @@ def import_autoseg_skeleton_with_synapses(project_id, segment_id):
             root_skeleton_id = mapping_skel_nid(segment_id, 0, project_id)
             new_tree = nx.bfs_tree(g2, root_skeleton_id)
 
-            if DEBUG: print('fetch relations and classes')
+            task_logger.debug('fetch relations and classes')
             cursor.execute("SELECT id,relation_name from relation where project_id = {project_id};".format(project_id=project_id))
             res = cursor.fetchall()
             relations = dict([(v,u) for u,v in res])
@@ -561,25 +573,25 @@ def import_autoseg_skeleton_with_synapses(project_id, segment_id):
             INSERT INTO class_instance (user_id, project_id, class_id, name)
                         VALUES ({},{},{},'{}') RETURNING id;
             """.format(DEFAULT_IMPORT_USER, project_id, classes['neuron'] ,"neuron {}".format(segment_id))
-            if DEBUG: print(query)
+            task_logger.debug(query)
             cursor.execute(query)
             neuron_class_instance_id = cursor.fetchone()[0]
-            if DEBUG: print('got neuron', neuron_class_instance_id)
+            task_logger.debug(f'got neuron: {neuron_class_instance_id}')
 
             query = """
             INSERT INTO class_instance (user_id, project_id, class_id, name)
                         VALUES ({},{},{},'{}') RETURNING id;
             """.format(DEFAULT_IMPORT_USER, project_id, classes['skeleton'] ,"skeleton {}".format(segment_id))
-            if DEBUG: print(query)
+            task_logger.debug(query)
             cursor.execute(query)
             skeleton_class_instance_id = cursor.fetchone()[0]
-            if DEBUG: print('got skeleton', skeleton_class_instance_id)
+            task_logger.debug(f'got skeleton: {skeleton_class_instance_id}')
 
             query = """
             INSERT INTO class_instance_class_instance (user_id, project_id, class_instance_a, class_instance_b, relation_id)
                         VALUES ({},{},{},{},{}) RETURNING id;
             """.format(DEFAULT_IMPORT_USER, project_id, skeleton_class_instance_id, neuron_class_instance_id, relations['model_of'])
-            if DEBUG: print(query)
+            task_logger.debug(query)
             cursor.execute(query)
             cici_id = cursor.fetchone()[0]
 
@@ -640,17 +652,17 @@ def import_autoseg_skeleton_with_synapses(project_id, segment_id):
             else:
                 cursor.execute(query)
 
-            if DEBUG: print('run multiquery')
+            task_logger.debug('run multiquery')
             if with_multi:
                 cursor.execute('\n'.join(queries))
 
         # call import_synapses_for_existing_skeleton with autoseg skeleton as seed
-        if DEBUG: print('call task: import_synapses_for_existing_skeleton')
+        task_logger.debug('call task: import_synapses_for_existing_skeleton')
 
         import_synapses_for_existing_skeleton(project_id, 
             -1,  skeleton_class_instance_id, segment_id)
 
-        if DEBUG: print('task: import_autoseg_skeleton_with_synapses done')
+        task_logger.debug('task: import_autoseg_skeleton_with_synapses done')
 
     except Exception as ex:
-        print('Exception occurred: {}'.format(ex))
+        task_logger.error(f'Exception occurred: {ex}')
