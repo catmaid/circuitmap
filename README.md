@@ -42,14 +42,14 @@ the front-end happens through this widget, this is how it can be opened:
    link.
 
 2. Select the tracing tool in CATMAID by clicking on the neuron like icon
-   button in the top toolbar (![Tracing Tool icon](sphinx-doc/source/_static/trace.svg?sanitize=true)).
+   button in the top toolbar (![Tracing Tool icon](sphinx-doc/source/_static/trace.png)).
 
 3. Click the Circuit Map icon in the top toolbar (![Circuit Map icon]()).
    Should it be hidden due to limited screen space, it is also possible to use
    the *Open Widget* dialog by using the first icon button in the top toolbar
-   (![Open Widget icon](sphinx-doc/source/_static/newwindow.svg??sanitize=true) or alterantively Ctrl + Space)
-   and searching for "Circuit Map". Enter or doubliclick on the result row will
-   open a new *Circuit Map widget*.
+   (![Open Widget icon](sphinx-doc/source/_static/newwindow.png) or
+   alternatively Ctrl + Space) and searching for "Circuit Map". Enter or
+   doubliclick on the result row will open a new *Circuit Map widget*.
 
 Circuit Map can operate in two modes: it can fetch a) all synapses for the
 currently selected skeleton and b) fetch a segmentation based skeleton for a
