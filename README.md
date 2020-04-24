@@ -50,15 +50,19 @@ the front-end happens through this widget, this is how it can be opened:
    Should it be hidden due to limited screen space, it is also possible to use
    the *Open Widget* dialog by using the first icon button in the top toolbar:
    ![Open Widget icon](sphinx-doc/source/_static/newwindow.svg), or
-   alternatively Ctrl + Space, and searching for "Circuit Map". Enter or
-   doubliclick on the result row will open a new *Circuit Map widget*.
+   alternatively <kbd>Ctrl</kbd> + <kbd>Space</kbd>, and searching for "Circuit
+   Map". Enter or double-click on the result row will open a new *Circuit Map
+   widget*.
 
 Circuit Map can operate in two modes: it can fetch a) all synapses for the
 currently selected skeleton and b) fetch a segmentation based skeleton for a
 given location along with the synapses linked to it. For both modes, existing
-synapses are reused if they are available. Additionally, both modes allow to
-also fetch the respective partner fragments for each synapse that is available
-from the segmentation data. Both modes are described in more detail below.
+synapses in the target project are used if they are available and match the
+automatically generated synapse.
+
+Additionally, both modes allow to also fetch the respective partner fragments
+for each synapse that is available from the segmentation data. Both modes are
+described in more detail below.
 
 ### Fetching synapses for the active skeleton.
 
@@ -81,6 +85,10 @@ that fetches the closest segmentation fragment along with its synapses.
 Typically, this process takes not longer than a few seconds. Depending on the
 setup of the CATMAID instance, the front-end will refresh automatically, once
 the data is ready (if [WebSockets/ASGI](https://catmaid.readthedocs.io/en/stable/websockets.html) is
-enabled). Alterantively the current view can be reloaded by clicking on the
+enabled). Alternatively the current view can be reloaded by clicking on the
 *Tracing Tool* icon. After a refresh, the new skeleton should appear and can be
 used like any other skeleton.
+
+### Fetching partner fragments
+
+TBA
