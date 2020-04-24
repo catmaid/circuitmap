@@ -104,4 +104,17 @@ the new skeleton should appear and can be used like any other skeleton.
 
 ### Fetching partner fragments
 
-TBA
+In CATMAID synapses consist of a *presynaptic connection* from a presynaptic node
+in a skeleton to a *connector node* as well as one or more *postsynaptic connections*
+from the connector node to postynaptic nodes in partner skeletons.
+
+By default *Circuit Map* will only fetch one half of these synapses: the connections
+linked to either a) the active skeleton or b) the segmentation fragment at a
+particular location. It is however possible to also fetch partner fragments for
+automatically fetched synapses. This can be enabled using the two checkboxes in the
+configuration section of the *Circuit Map widget*. The option "Fetch upstream autoseg
+skeletons" will fetch all fragments presynaptic to the query skeleton/fragment and
+the "Fetch downstream autoseg skeletons" option will consider all segmentation
+fragments postsynaptic to the query skeleton/fragment. In both cases, to be actually
+added, the number of connections between the fragments and the query skeleton/fragment
+needs to be at least as large as defined in the two threshold input fields in the widget.
