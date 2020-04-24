@@ -46,7 +46,7 @@ the front-end happens through this widget, this is how it can be opened:
 2. Select the tracing tool in CATMAID by clicking on the neuron like icon
    button in the top toolbar: ![Tracing Tool icon](sphinx-doc/source/_static/trace.svg)
 
-3. Click the Circuit Map icon in the top toolbar (![Circuit Map icon]()).
+3. Click the Circuit Map icon in the top toolbar (![Circuit Map icon](circuitmap/static/images/circuitmap.svg)).
    Should it be hidden due to limited screen space, it is also possible to use
    the *Open Widget* dialog by using the first icon button in the top toolbar:
    ![Open Widget icon](sphinx-doc/source/_static/newwindow.svg), or
