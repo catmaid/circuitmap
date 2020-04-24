@@ -33,3 +33,7 @@ JAVASCRIPT['circuitmap'] = {
     ),
     'output_filename': 'js/circuitmap.js'
 }
+
+copy_only_files = {
+    'circuitmap-icon': 'catmaid/images/circuitmap.svg',
+}
