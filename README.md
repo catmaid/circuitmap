@@ -64,7 +64,7 @@ Additionally, both modes allow to also fetch the respective partner fragments
 for each synapse that is available from the segmentation data. Both modes are
 described in more detail below.
 
-### Fetching synapses for the active skeleton.
+### Fetching synapses for a particular neuron
 
 To find all synapses for a particular skeleton/neuron, the respective skeleton
 has to be selected first in CATMAID. A straight-forward way to find neurons is
