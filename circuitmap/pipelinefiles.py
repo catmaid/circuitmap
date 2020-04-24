@@ -35,5 +35,5 @@ JAVASCRIPT['circuitmap'] = {
 }
 
 copy_only_files = {
-    'circuitmap-icon': 'catmaid/images/circuitmap.svg',
+    'circuitmap-icon': 'images/circuitmap.svg',
 }
