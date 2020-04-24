@@ -118,3 +118,20 @@ the "Fetch downstream autoseg skeletons" option will consider all segmentation
 fragments postsynaptic to the query skeleton/fragment. In both cases, to be actually
 added, the number of connections between the fragments and the query skeleton/fragment
 needs to be at least as large as defined in the two threshold input fields in the widget.
+
+### Notes
+
+- It might be useful to monitor the number of synapses as well as the visual
+  representation befor and after synapses are added. To so, open the *3D Viewer*
+  ("3D" icon) and add the active skeletonto the *Selection Table* that was opened
+  alongside the 3D Viewer (right below it) by selection "Active skeleton" as *From*
+  and then click the <kbd>Append</kbd> button. Synapses are displayed by default.
+  To get basic synapse counts, click on <kbd>Measure</kbd> in the *Selection Table*.
+  While both the *3D Viewer* and the *Measurement Table* can be refreshed with the
+  help of the <kbd>Refresh</kbd> button, it might be useful to open just a second
+  instance of both widgets, so the before and after can be seen more easily.
+  *Note:* Windows can be moved around in CATMAID by dragging the window title bar
+  with the mouse. 
+- Undo is not possible at this point. Past data can however normally be recovered in
+  CATMAID thanks to a complete audit log. In production environments it is however
+  advisable regardless to make sure synapses are added to the correct skeleton.
