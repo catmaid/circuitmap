@@ -19,6 +19,12 @@ from celery.task import task
 from celery.utils.log import get_task_logger
 
 from .settings import *
+from circuitmap import CircuitMapError
+from django.conf import settings
+
+from catmaid.consumers import msg_user
+from catmaid.models import Message, User
+from catmaid.control.message import notify_user
 
 cv = CloudVolume(CLOUDVOLUME_URL, use_https=True, parallel=False)
 cv.meta.info['skeletons'] = CLOUDVOLUME_SKELETONS
@@ -192,12 +198,21 @@ def fetch_synapses(request: HttpRequest, project_id=None):
     upstream_syn_count = int(request.POST.get('upstream_syn_count', 5 ))
     downstream_syn_count = int(request.POST.get('downstream_syn_count', 5 ))
 
+    source_hash = request.POST.get('source_hash')
+
     pid = int(project_id)
 
     if x == -1 or y == -1 or z == -1:
-        return JsonResponse({'project_id': pid, 'msg': 'Invalid location coordinates'})
+        raise ValueError(f"Invalid location coordinate: ({x}, {y}, {z})")
+
+    msg_payload = {
+        'source_hash': source_hash,
+    }
 
     if active_skeleton_id == -1:
+
+        msg_payload['task'] = 'import-location'
+        msg_payload['x'], msg_payload['y'], msg_payload['z'] = x, y, z
 
         # look up segment id at location and fetch synapses        
         try:
@@ -205,64 +220,136 @@ def fetch_synapses(request: HttpRequest, project_id=None):
         except Exception as ex:
             task_logger.debug('Exception occurred: {}'.format(ex))
             segment_id = None
-            return JsonResponse({'project_id': pid, 'msg': 'No segment found at this location.', 'ex': ex})
+            raise CircuitMapError(f"No segment found at stack location ({x}, {y}, {z}). Error: {ex}")
 
         if segment_id is None or segment_id == 0:
-            return JsonResponse({'project_id': pid, 'msg': 'No segment found at this location.'})
+            raise CircuitMapError(f"No segment found at stack location ({x}, {y}, {z})")
         else:
             task_logger.debug('spawn task: import_autoseg_skeleton_with_synapses')
 
-            task = import_autoseg_skeleton_with_synapses.delay(pid, 
-                segment_id)
+            task = import_autoseg_skeleton_with_synapses.delay(pid, request.user.id,
+                segment_id, True, msg_payload)
+
+            msg_payload['task'] = 'import-location-partners'
 
             task_logger.debug('call: import_upstream_downstream_partners')
-            task  = import_upstream_downstream_partners.delay(segment_id, fetch_upstream, fetch_downstream,
-                pid, upstream_syn_count, downstream_syn_count)
+            task  = import_upstream_downstream_partners.delay(segment_id,
+                    request.user.id, fetch_upstream, fetch_downstream, pid,
+                    upstream_syn_count, downstream_syn_count, True, msg_payload)
 
             return JsonResponse({'project_id': pid, 'segment_id': str(segment_id)})
 
     else:
         # fetch synapses for manual skeleton
-        task = import_synapses_for_existing_skeleton.delay(pid, 
-            distance_threshold, active_skeleton_id)
+        task = import_synapses_for_existing_skeleton.delay(pid, request.user.id,
+            distance_threshold, active_skeleton_id, None, True, msg_payload)
         
         return JsonResponse({'project_id': pid})
 
 @task()
-def import_upstream_downstream_partners(segment_id, fetch_upstream, fetch_downstream, 
-	pid, upstream_syn_count, downstream_syn_count):
+def import_upstream_downstream_partners(segment_id, user_id, fetch_upstream, fetch_downstream,
+	pid, upstream_syn_count, downstream_syn_count, message_user=True, message_payload=None):
+    error = None
+    n_upsteam_partners = 0
+    n_downstream_partners = 0
     try:
         task_logger.info(f'task: import_upstream_downstream_partners start {segment_id}')
 
         # get all partners partners
-        #conn = sqlite3.connect(SQLITE3_DB_PATH)
         cur = connection.cursor()
 
         task_logger.debug('load subgraph')
         g = load_subgraph(cur, segment_id)
 
         task_logger.debug('start fetching ...')
+        n_upsteam_partners = 0
         if fetch_upstream:
-            for partner_segment_id in get_presynaptic_skeletons(g, segment_id, synaptic_count_threshold = upstream_syn_count):
+            upstream_partners = get_presynaptic_skeletons(g, segment_id, synaptic_count_threshold = upstream_syn_count)
+            n_upsteam_partners = len(upstream_partners)
+            for partner_segment_id in upstream_partners:
                 task_logger.debug(f'spawn task for presynaptic segment_id {partner_segment_id}')
-                task = import_autoseg_skeleton_with_synapses.delay(pid, 
-                    partner_segment_id)
+                task = import_autoseg_skeleton_with_synapses.delay(pid, user_id,
+                    partner_segment_id, False)
 
+        n_downstream_partners = 0
         if fetch_downstream:
-            for partner_segment_id in get_postsynaptic_skeletons(g, segment_id, synaptic_count_threshold = downstream_syn_count):
+            downstream_partners = get_postsynaptic_skeletons(g, segment_id, synaptic_count_threshold = downstream_syn_count)
+            n_downstream_partners = len(downstream_partners)
+            for partner_segment_id in downstream_partners:
                 task_logger.debug(f'spawn task for postsynaptic segment_id {partner_segment_id}')
-                task = import_autoseg_skeleton_with_synapses.delay(pid, 
-                    partner_segment_id)
+                task = import_autoseg_skeleton_with_synapses.delay(pid, user_id,
+                    partner_segment_id, False)
+
+        if message_user:
+            payload = {
+                'task': 'import-partner-fragments',
+                'segment_id': segment_id,
+                'n_upsteam_partners': n_upsteam_partners,
+                'n_downstream_partners': n_downstream_partners,
+            }
+            if message_payload:
+                payload.update(message_payload)
+            msg_user(user_id, 'circuitmap-update', payload)
 
     except Exception as ex:
+        error = ex
         task_logger.error(f'Exception import_upstream_downstream_partners: {ex}')
 
+    if message_user:
+        partners = []
+        if fetch_downstream:
+            partners.append('downstream')
+        if fetch_upstream:
+            partners.append('upstream')
+        user = User.objects.get(pk=user_id)
+        msg = Message()
+        msg.user = user
+        msg.read = False
+        if error:
+            msg.title = f"Error while importing {' and '.join(partners)} partners for skeleton/fragment #{segment_id}"
+            msg.text = f"No partners could be created due to the following error: {error}"
+            msg.action = ""
+        else:
+            msg.title = f"Synapses imported for skeleton #{active_skeleton_id}"
+            msg.title = f"Imported {' and '.join(partners)} partners for skeleton/fragment #{segment_id}"
+            msg.text = (f"Imported {n_upsteam_partners} upstream partners and " +
+                "{n_downstream_partners} partners for skeleton/fragment #{segment_id}")
+            msg.action = f"?pid={project_id}&active_skeleton_id={segment_id}&tool=tracingtool"
+        msg.save()
+
+        notify_user(user.id, msg.id, msg.title)
+
+        payload = {
+            'task': 'import-synapses',
+            'n_inserted_synapses': len(connectors),
+            'n_inserted_links': len(treenode_connector),
+            'skeleton_id': active_skeleton_id,
+        }
+        if error:
+            payload['error'] = str(error)
+        if message_payload:
+            payload.update(message_payload)
+        task_logger.debug(f'{user_id} {payload}')
+        msg_user(user_id, 'circuitmap-update', payload)
+
+
+#Code like this might be needed for make it work with RabbitMQ:
+#@task()
+#def import_synapses_for_existing_skeleton(project_id, user_id, distance_threshold, active_skeleton_id,
+#        autoseg_segment_id = None, message_user=True, message_payload=None):
+#    asyncio.run(import_synapses_for_existing_skeleton(project_id, user_id,
+#            distance_threshold, active_skeleton_id, autoseg_segment_id,
+#            message_user, message_payload))
+#
+#async def _import_synapses_for_existing_skeleton(project_id, user_id, distance_threshold, active_skeleton_id,
 
 @task()
-def import_synapses_for_existing_skeleton(project_id, distance_threshold, active_skeleton_id,
-    autoseg_segment_id = None):
-    
+def import_synapses_for_existing_skeleton(project_id, user_id, distance_threshold, active_skeleton_id,
+        autoseg_segment_id = None, message_user=True, message_payload=None):
     task_logger.debug('task: import_synapses_for_existing_skeleton started')
+    error = None
+    connectors = {}
+    treenode_connector = {}
 
     try:
         # retrieve skeleton with all nodes directly from the database
@@ -301,15 +388,14 @@ def import_synapses_for_existing_skeleton(project_id, distance_threshold, active
 
             # Debug: explicitly remove segments with ID=0, because there seem
             # to be problems with the data.
-            overlapping_segmentids.remove(0)
-            task_logger.debug('Removed segments with zero-ID')
+            if hasattr(settings, 'CIRCUITMAP_IGNORED_SEGMENT_IDS'):
+                overlapping_segmentids = overlapping_segmentids - set(settings.CIRCUITMAP_IGNORED_SEGMENT_IDS)
+                task_logger.debug(f'Removed segments with the following IDs: {settings.CIRCUITMAP_IGNORED_SEGMENT_IDS}')
         
         # store skeleton in kdtree for fast distance computations
         tree = sp.KDTree( skeleton[['x', 'y', 'z']] )
         task_logger.debug('KD tree built for skeleton')
 
-        connectors = {}
-        treenode_connector = {}
         all_pre_links = []
         all_post_links = []
 
@@ -484,14 +570,50 @@ def import_synapses_for_existing_skeleton(project_id, distance_threshold, active
             cursor.execute('\n'.join(queries))
             task_logger.debug('multiquery done')
 
-
         task_logger.debug('task: import_synapses_for_existing_skeleton started: done')
     except Exception as ex:
+        error = ex
         task_logger.error(f'Exception occurred: {ex}')
+
+    if message_user:
+        task_logger.debug('Creating user message')
+        user = User.objects.get(pk=user_id)
+        msg = Message()
+        msg.user = user
+        msg.read = False
+        has_zero_results = len(connectors) == 0 and len(treenode_connector) == 0
+        if error:
+            msg.title = f"Error while importing synapses for skeleton #{active_skeleton_id}"
+            msg.text = f"No synapses could be created due to the following error: {error}"
+            msg.action = ""
+        elif has_zero_results:
+            msg.title = f"No synapses were found that could be added to skeleton #{active_skeleton_id}"
+            msg.action = f"?pid={project_id}&active_skeleton_id={active_skeleton_id}&tool=tracingtool"
+        else:
+            msg.title = f"Synapses imported for skeleton #{active_skeleton_id}"
+            msg.text = (f"Imported {len(connectors)} synapses (connector nodes) " +
+                f"and created {len(treenode_connector)}")
+            msg.action = f"?pid={project_id}&active_skeleton_id={active_skeleton_id}&tool=tracingtool"
+        msg.save()
+
+        notify_user(user.id, msg.id, msg.title)
+
+        payload = {
+            'task': 'import-synapses',
+            'n_inserted_synapses': len(connectors),
+            'n_inserted_links': len(treenode_connector),
+            'skeleton_id': active_skeleton_id,
+        }
+        if error:
+            payload['error'] = str(error)
+        if message_payload:
+            payload.update(message_payload)
+        msg_user(user_id, 'circuitmap-update', payload)
+        task_logger.debug('Created DB message and ASGI message')
 
 
 @task
-def import_autoseg_skeleton_with_synapses(project_id, segment_id):
+def import_autoseg_skeleton_with_synapses(project_id, user_id, segment_id, message_user=True, message_payload=None):
 
     try:
         # ID handling: method globally unique ID
@@ -657,10 +779,12 @@ def import_autoseg_skeleton_with_synapses(project_id, segment_id):
         # call import_synapses_for_existing_skeleton with autoseg skeleton as seed
         task_logger.debug('call task: import_synapses_for_existing_skeleton')
 
-        import_synapses_for_existing_skeleton(project_id, 
-            -1,  skeleton_class_instance_id, segment_id)
+        import_synapses_for_existing_skeleton(project_id, user_id,
+            -1,  skeleton_class_instance_id, segment_id, message_user,
+            message_payload)
 
         task_logger.debug('task: import_autoseg_skeleton_with_synapses done')
+
 
     except Exception as ex:
         task_logger.error(f'Exception occurred: {ex}')
