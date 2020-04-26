@@ -141,7 +141,6 @@ def get_postsynaptic_skeletons(g, segment_id, synaptic_count_threshold = 0):
 
 @api_view(['GET'])
 def get_neighbors_graph(request, segment_id):    
-    #conn = sqlite3.connect(SQLITE3_DB_PATH)
     cur = connection.cursor()
     g = load_subgraph(cur, segment_id, order = 0)
     from networkx.readwrite import json_graph
@@ -150,7 +149,6 @@ def get_neighbors_graph(request, segment_id):
 
 @api_view(['GET'])
 def get_synapses(request, segment_id):    
-    #conn = sqlite3.connect(SQLITE3_DB_PATH)
     cur = connection.cursor()
 
     task_logger.debug('retrieve pre_links')
