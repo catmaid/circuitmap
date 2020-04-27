@@ -638,11 +638,6 @@ def import_autoseg_skeleton_with_synapses(project_id, user_id, segment_id, messa
         else:        
             # fetch and insert autoseg skeleton at location
             task_logger.debug('fetch skeleton for segment_id {}'.format(segment_id))
-            
-            #cv = CloudVolume(CLOUDVOLUME_URL, use_https=False, parallel=False)
-            #cv.meta.info['skeletons'] = CLOUDVOLUME_SKELETONS
-            #cv.skeleton.meta.refresh_info()
-            #cv.skeleton = ShardedPrecomputedSkeletonSource(cv.skeleton.meta, cv.cache, cv.config)
 
             s1 = cv.skeleton.get(int(segment_id))
             task_logger.debug('fetched.')
