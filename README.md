@@ -44,7 +44,9 @@ the front-end happens through this widget, this is how it can be opened:
    link.
 
 2. Select the tracing tool in CATMAID by clicking on the neuron like icon
-   button in the top toolbar: ![Tracing Tool icon](sphinx-doc/source/_static/trace.svg)
+   button in the top toolbar: ![Tracing Tool icon](sphinx-doc/source/_static/trace.svg).
+   In case tracing data shows up right away (magenta points and lines), the
+   tracing tool is loaded already.
 
 3. Click the Circuit Map icon in the top toolbar (![Circuit Map icon](circuitmap/static/images/circuitmap.svg)).
    Should it be hidden due to limited screen space, it is also possible to use
