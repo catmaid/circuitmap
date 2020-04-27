@@ -103,12 +103,21 @@
         `;
         controls.appendChild(optionFields);
 
+
+        let refLines = CATMAID.DOM.createCheckboxSetting("Display reference lines",
+            CATMAID.StackViewer.Settings.session.display_stack_reference_lines,
+            "Show crossing lines that point to where segments are looked up", e => {
+              project.getStackViewers().forEach(s => s.showReferenceLines(e.target.checked));
+            });
+        refLines.css('display', 'block');
+        $(controls).append(refLines);
+
         var fetch = document.createElement('input');
+        fetch.classList.add('clear');
         fetch.setAttribute("type", "button");
         fetch.setAttribute("value", "Fetch autoseg skeleton and synapses at location");
         fetch.onclick = this.fetch_location.bind(this);
         controls.appendChild(fetch);
-
       },
       contentID: this.idPrefix + 'content',
       createContent: function(container) {
