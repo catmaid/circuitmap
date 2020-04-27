@@ -35,6 +35,7 @@
       helpText: 'Circuitmap Widget: ',
       controlsID: this.idPrefix + 'controls',
       createControls: function(controls) {
+	controls.classList.add('vertical-settings');
 
         var optionFields = document.createElement('div');
         optionFields.innerHTML = `
@@ -67,23 +68,14 @@
         `;
         controls.appendChild(optionFields);
 
-        var optionFields = document.createElement('div');
-        optionFields.innerHTML = `
-        <table cellpadding="0" cellspacing="0" border="0"
-              id="circuitmap_flow1_option_fields${this.widgetID}">
-          <tr>
-            <td><h3>Fetch synapses for active skeleton</h3></td>
-            <td></td>
-          </tr>
-          <tr>
-            <td>Cut-off distance-from-skeleton threshold (in nm) to retrieve synaptic links</td>
-            <td><input type="number" name="distance_threshold" value="1000"
-                    id="distance_threshold${this.widgetID}" tabindex="-1" /></td>
-          </tr>
-        </table>
-        <br />
-        `;
-        controls.appendChild(optionFields);
+	let fetchSynHeader = controls.appendChild(document.createElement('h3'));
+	fetchSynHeader.appendChild(document.createTextNode('Fetch synapses for active skeleton'));
+
+	let fetchCutoffSetting = CATMAID.DOM.createNumericInputSetting('Max dist. from sekelton (nm)',
+	    this.distance_threshold, 50, "If the distance between the skeleton and a candidate synapse is larger, the synapse is ignored.",
+	    e => this.distance_threshold = parseInt(e.target.value,10));
+	fetchCutoffSetting.find('input').attr('id', `distance_threshold${this.widgetID}`);
+	$(controls).append(fetchCutoffSetting);
 
         var fetch = document.createElement('input');
         fetch.setAttribute("type", "button");
