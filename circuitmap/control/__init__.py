@@ -22,6 +22,7 @@ from .settings import *
 from circuitmap import CircuitMapError
 from django.conf import settings
 
+from catmaid.control.common import get_request_bool
 from catmaid.consumers import msg_user
 from catmaid.models import Message, User
 from catmaid.control.message import notify_user
@@ -191,8 +192,8 @@ def fetch_synapses(request: HttpRequest, project_id=None):
     y = int(round(float(request.POST.get('y', -1))))
     z = int(round(float(request.POST.get('z', -1))))
 
-    fetch_upstream = bool(request.POST.get('fetch_upstream', False ))
-    fetch_downstream = bool(request.POST.get('fetch_downstream', False ))
+    fetch_upstream = get_request_bool(request.POST, 'fetch_upstream', False)
+    fetch_downstream = get_request_bool(request.POST, 'fetch_downstream', False)
     distance_threshold = int(request.POST.get('distance_threshold', 1000 ))
     active_skeleton_id = int(request.POST.get('active_skeleton', -1 ))
     upstream_syn_count = int(request.POST.get('upstream_syn_count', 5 ))
