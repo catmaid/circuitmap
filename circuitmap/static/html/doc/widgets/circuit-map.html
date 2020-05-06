@@ -1,0 +1,106 @@
+<html>
+  <body>
+    <h3>Circuit Map</h3>
+
+    <p>Circuit Map can operate in two modes: it can fetch a) all synapses for
+    the currently selected skeleton and b) fetch a segmentation based skeleton
+    for a given location along with the synapses linked to it. For both modes,
+    existing synapses in the target project are used if they are available and
+    match the automatically generated synapse.</p>
+
+    <p>Additionally, both modes allow to also fetch the respective partner
+    fragments for each synapse that is available from the segmentation data.
+    Both modes are described in more detail below.</p>
+
+    <h4>Fetching synapses for a particular neuron</h4>
+
+    <p>To find all synapses for a particular skeleton/neuron, the respective
+    skeleton has to be selected first in CATMAID. A straight-forward way to find
+    neurons is by opening the <em>Neuron Navigator</em>:</p>
+
+    <p><ol>
+      <li>Either click the compass icon in the toolbar or search for "Navigator" in the
+        <em>Open Widget</em> dialog (see above).</li>
+      <li>Double-click on "All neurons" and double-click a neuron that you want
+        to add synapses too.</li>
+      <li>Click on <kbd>Go to nearest node</kbd> to select the skeleton.</li>
+
+    </ol></p>
+
+    <p>With a skeleton selected, go back to the <em>Circuit Map</em> widget and press
+    the <kbd>Fetch synapses for active neuron</kbd>. This will queue an
+    asynchronous task on the server which will fetch all synapses for the active
+    skeletons. Depending on the setup of the CATMAID instance, the front-end
+    will refresh automatically, once the data is ready (if WebSockets/ASGI
+    is enabled). Alternatively the current view can be reloaded by clicking on
+    the <em>Tracing Tool</em> icon.</p>
+
+    <h4>Fetching the segmentation fragment at a location plus its synapses</h4>
+
+    <p>If no existing neuron is already present at a location of interest,
+    Circuit Map can be used to fetch a segmentation based skeleton fragment
+    along with synapses connected to it. The widget will use the center of the
+    field of view in the active stack viewer as query location. This can be
+    easier to see by enabling reference lines that cross at the center of the
+    view. This can be done by</p>
+
+    <p><ol>
+      <li>Opening the <em>Settings Widget</em> by clicking on the gear icon in
+        the top toolbar.</li>
+      <li>Find the "Display reference lines" option in the "Stack view" section
+        and enable.</li>
+    </ol></p>
+
+    <p> When ready, press <kbd>Fetch autoseg skeleton and synapses at
+    location</kbd> in the <em>Circuit Map widget</em>. This will kick off a
+    background task on the server that fetches the closest segmentation fragment
+    along with its synapses. Typically, this process takes not longer than a
+    few seconds. After a refresh (either automatically if set up or manually by
+    reloading the <em>Tracing Tool</em>, the new skeleton should appear and can
+    be used like any other skeleton.</p>
+
+    <h4>Fetching partner fragments</h4>
+
+    <p>In CATMAID synapses consist of a <em>presynaptic connection</em> from a
+    presynaptic node in a skeleton to a <em>connector node</em> as well as one
+    or more <em>postsynaptic connections</em> from the connector node to
+    postynaptic nodes in partner skeletons.</p>
+
+    <p>By default <em>Circuit Map</em> will only fetch one half of these synapses: the
+    connections linked to either a) the active skeleton or b) the segmentation
+    fragment at a particular location. It is however possible to also fetch
+    partner fragments for automatically fetched synapses. This can be enabled
+    using the two checkboxes in the configuration section of the <em>Circuit Map
+    widget</em>. The option "Fetch upstream autoseg skeletons" will fetch all
+    fragments presynaptic to the query skeleton/fragment and the "Fetch
+    downstream autoseg skeletons" option will consider all segmentation
+    fragments postsynaptic to the query skeleton/fragment. In both cases, to be
+    actually added, the number of connections between the fragments and the
+    query skeleton/fragment needs to be at least as large as defined in the two
+    threshold input fields in the widget.</p>
+
+    <h4>Notes</h4>
+
+    <p>
+      <ul>
+        <li>It might be useful to monitor the number of synapses as well as the
+          visual representation befor and after synapses are added. To so, open
+          the <em>3D Viewer</em> and add the active skeletonto the <em>Selection
+          Table</em> that was opened alongside the 3D Viewer (right below it)
+          by selection "Active skeleton" as <em>From</em> and then click the
+          <kbd>Append</kbd> button. Synapses are displayed by default. To get
+          basic synapse counts, click on <kbd>Measure</kbd> in the <em>Selection
+          Table</em>. While both the <em>3D Viewer</em> and the <em>Measurement
+          Table</em> can be refreshed with the help of the <kbd>Refresh</kbd>
+          button, it might be useful to open just a second instance of both
+          widgets, so the before and after can be seen more easily. <em>Note:</em>
+          Windows can be moved around in CATMAID by dragging the window title bar
+          with the mouse.</li>
+        <li>Undo is not possible at this point. Past data can however normally
+          be recovered in CATMAID thanks to a complete audit log. In production
+          environments it is however advisable regardless to make sure synapses
+          are added to the correct skeleton.</li>
+      </ul>
+    </p>
+  </body>
+</html>

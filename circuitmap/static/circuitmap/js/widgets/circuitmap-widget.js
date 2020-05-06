@@ -32,7 +32,6 @@
 
   CircuitmapWidget.prototype.getWidgetConfiguration = function() {
     return {
-      helpText: 'Circuitmap Widget: ',
       controlsID: this.idPrefix + 'controls',
       createControls: function(controls) {
         controls.classList.add('vertical-settings');
@@ -157,8 +156,8 @@
           self.downstream_syn_count = this.value;
         });
 
-      }
-
+      },
+      helpPath: 'circuit-map.html',
     };
   };
 
