@@ -297,7 +297,7 @@
       if (info.error) {
         this.updateMessage(`Error during the import of partner fragments for segment ${info.segment_id}`);
       } else {
-        this.updateMessage(`Imported ${info.n_upsteam_partners} partners and ${info.n_downstream_partners} ` +
+        this.updateMessage(`Imported ${info.n_upsteam_partners} partners and ${info.n_downstream_partners} links ` +
             `for skeleton/segment ${info.segment_id}`);
       }
     } else {
