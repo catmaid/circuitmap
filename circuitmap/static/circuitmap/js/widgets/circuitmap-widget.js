@@ -286,7 +286,7 @@
       if (info.error) {
         this.updateMessage(`Error during synapse import for skeleton ${info.skeleton_id}`);
       } else {
-        this.updateMessage(`Imported ${info.n_inserted_synapses} synapses and ${info.n_inserted_links} ` +
+        this.updateMessage(`Imported ${info.n_inserted_synapses} synapses and ${info.n_inserted_links} links` +
             `for skeleton ${info.skeleton_id}`);
         if (info.hasOwnProperty('skeleton_id')) {
           // Issue a skeleton update event
