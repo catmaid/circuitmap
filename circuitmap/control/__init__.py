@@ -194,6 +194,7 @@ def fetch_synapses(request: HttpRequest, project_id=None):
 
     fetch_upstream = get_request_bool(request.POST, 'fetch_upstream', False)
     fetch_downstream = get_request_bool(request.POST, 'fetch_downstream', False)
+    with_autapses = get_request_bool(request.POST, 'with_autapses', False)
     distance_threshold = int(request.POST.get('distance_threshold', 1000 ))
     active_skeleton_id = int(request.POST.get('active_skeleton', -1 ))
     upstream_syn_count = int(request.POST.get('upstream_syn_count', 5 ))
@@ -229,27 +230,30 @@ def fetch_synapses(request: HttpRequest, project_id=None):
             task_logger.debug('spawn task: import_autoseg_skeleton_with_synapses')
 
             task = import_autoseg_skeleton_with_synapses.delay(pid, request.user.id,
-                segment_id, True, msg_payload)
+                segment_id, True, msg_payload, with_autapses)
 
             msg_payload['task'] = 'import-location-partners'
 
             task_logger.debug('call: import_upstream_downstream_partners')
             task  = import_upstream_downstream_partners.delay(segment_id,
                     request.user.id, fetch_upstream, fetch_downstream, pid,
-                    upstream_syn_count, downstream_syn_count, True, msg_payload)
+                    upstream_syn_count, downstream_syn_count, True, msg_payload,
+                    with_autapses)
 
             return JsonResponse({'project_id': pid, 'segment_id': str(segment_id)})
 
     else:
         # fetch synapses for manual skeleton
         task = import_synapses_for_existing_skeleton.delay(pid, request.user.id,
-            distance_threshold, active_skeleton_id, None, True, msg_payload)
+            distance_threshold, active_skeleton_id, None, True, msg_payload,
+            with_autapses)
         
         return JsonResponse({'project_id': pid})
 
 @task()
 def import_upstream_downstream_partners(segment_id, user_id, fetch_upstream, fetch_downstream,
-	pid, upstream_syn_count, downstream_syn_count, message_user=True, message_payload=None):
+	pid, upstream_syn_count, downstream_syn_count, message_user=True,
+        message_payload=None, with_autapses=False):
     error = None
     n_upsteam_partners = 0
     n_downstream_partners = 0
@@ -270,7 +274,7 @@ def import_upstream_downstream_partners(segment_id, user_id, fetch_upstream, fet
             for partner_segment_id in upstream_partners:
                 task_logger.debug(f'spawn task for presynaptic segment_id {partner_segment_id}')
                 task = import_autoseg_skeleton_with_synapses.delay(pid, user_id,
-                    partner_segment_id, False)
+                    partner_segment_id, False, with_autapses=with_autapses)
 
         n_downstream_partners = 0
         if fetch_downstream:
@@ -279,7 +283,7 @@ def import_upstream_downstream_partners(segment_id, user_id, fetch_upstream, fet
             for partner_segment_id in downstream_partners:
                 task_logger.debug(f'spawn task for postsynaptic segment_id {partner_segment_id}')
                 task = import_autoseg_skeleton_with_synapses.delay(pid, user_id,
-                    partner_segment_id, False)
+                    partner_segment_id, False, with_autapses=with_autapses)
 
         if message_user:
             payload = {
@@ -346,7 +350,8 @@ def import_upstream_downstream_partners(segment_id, user_id, fetch_upstream, fet
 
 @task()
 def import_synapses_for_existing_skeleton(project_id, user_id, distance_threshold, active_skeleton_id,
-        autoseg_segment_id = None, message_user=True, message_payload=None):
+        autoseg_segment_id = None, message_user=True, message_payload=None,
+        with_autapses=False):
     task_logger.debug('task: import_synapses_for_existing_skeleton started')
     error = None
     connectors = {}
@@ -433,6 +438,9 @@ def import_synapses_for_existing_skeleton(project_id, user_id, distance_threshol
             all_post_links_concat_remap_connector = get_links_from_offset(cursor, tmp_list)
             all_post_links_concat_remap_connector = all_post_links_concat_remap_connector.set_index('offset')
             task_logger.debug(f'total nr representative postlinks collected: {len(all_post_links_concat_remap_connector)}')
+
+        # Faciltate autapse checking
+        seen_skeleton_connectors_links = set()
           
         if len(all_pre_links_concat) > 0:
             task_logger.debug('find closest distances to skeleton for pre')
@@ -467,6 +475,10 @@ def import_synapses_for_existing_skeleton(project_id, user_id, distance_threshol
                 treenode_connector[ \
                     (skid, connector_id)] = {'type': 'presynaptic_to'}
 
+                # remember skeleton link
+                if not with_autapses:
+                    seen_skeleton_connectors_links.add((active_skeleton_id, connector_id))
+
         if len(all_post_links_concat) > 0:
             task_logger.debug('find closest distances to skeleton for post')
             res = tree.query(all_post_links_concat[['post_x','post_y', 'post_z']])
@@ -494,6 +506,10 @@ def import_synapses_for_existing_skeleton(project_id, user_id, distance_threshol
                     connector_id = CONNECTORID_OFFSET + int(r['offset']) * 10 
                     if not connector_id in connectors:
                         connectors[connector_id] = r.to_dict()
+                # skip post links that form autapses
+                if (active_skeleton_id, connector_id) in seen_skeleton_connectors_links:
+                    task_logger.debug(f'skipping autapse: {active_skeleton_id}, {connector_id}')
+                    continue
                 # add treenode_connector link
                 treenode_connector[ \
                     (skid, connector_id)] = {'type': 'postsynaptic_to'}
@@ -614,7 +630,8 @@ def import_synapses_for_existing_skeleton(project_id, user_id, distance_threshol
 
 
 @task
-def import_autoseg_skeleton_with_synapses(project_id, user_id, segment_id, message_user=True, message_payload=None):
+def import_autoseg_skeleton_with_synapses(project_id, user_id, segment_id,
+        message_user=True, message_payload=None, with_autapses=False):
 
     try:
         # ID handling: method globally unique ID
@@ -777,7 +794,7 @@ def import_autoseg_skeleton_with_synapses(project_id, user_id, segment_id, messa
 
         import_synapses_for_existing_skeleton(project_id, user_id,
             -1,  skeleton_class_instance_id, segment_id, message_user,
-            message_payload)
+            message_payload, with_autapses)
 
         task_logger.debug('task: import_autoseg_skeleton_with_synapses done')
 

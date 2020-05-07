@@ -19,6 +19,7 @@
     this.downstream_syn_count = 5;
     this.content = undefined;
     this.autoSelectResultSkeleton = true;
+    this.allowAutapses = false;
 
     SkeletonAnnotations.on(SkeletonAnnotations.EVENT_ACTIVE_NODE_CHANGED,
         this.handleActiveNodeChange, this);
@@ -35,6 +36,18 @@
       controlsID: this.idPrefix + 'controls',
       createControls: function(controls) {
         controls.classList.add('vertical-settings');
+
+        // Autapses
+        let topWrapper = document.createElement('p');
+        topWrapper.style.width = '100%';
+        let autapses = CATMAID.DOM.createCheckboxSetting("Allow autapses",
+            this.allowAutapses,
+            "If enabled, imported synaptic links are allowed to form autapses.", e => {
+              this.allowAutapses = e.target.checked;
+            });
+        autapses.css('display', 'block');
+        $(topWrapper).append(autapses);
+        $(controls).append(topWrapper);
 
         let fetchSynHeader = controls.appendChild(document.createElement('h3'));
         fetchSynHeader.appendChild(document.createTextNode('Fetch synapses for active skeleton'));
@@ -206,6 +219,7 @@
       'downstream_syn_count': this.downstream_syn_count,
       'active_skeleton': activeSkeletonId,
       'source_hash': this.sourceHash,
+      'with_autapses': this.allowAutapses,
     };
 
     this.updateMessage(`Fetching synapses for skeleton #${activeSkeletonId}`);
@@ -238,6 +252,7 @@
       'downstream_syn_count': this.downstream_syn_count,
       'active_skeleton': -1,
       'source_hash': this.sourceHash,
+      'with_autapses': this.allowAutapses,
     };
 
     this.updateMessage(`Fetching segment and synapses for stack location (${stackViewer.x}, ${stackViewer.y}, ${stackViewer.z})`);
