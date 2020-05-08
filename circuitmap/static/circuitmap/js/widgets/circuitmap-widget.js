@@ -35,111 +35,124 @@
     return {
       controlsID: this.idPrefix + 'controls',
       createControls: function(controls) {
+        let activeSkeletonTab = 'Synapses for active skeleton';
+        let locationTab = 'Synapses and segment for location';
+        var tabs = CATMAID.DOM.addTabGroup(controls, this.widgetID,
+            ['Main', activeSkeletonTab, locationTab]);
+
+        CATMAID.DOM.appendToTab(tabs['Main'], [
+          {
+            type: 'button',
+            label: 'Refresh',
+            title: 'Reload the import table',
+            onclick: e => {
+              this.refresh();
+            }
+          },
+          {
+            type: 'checkbox',
+            label: 'Allow autapses',
+            title: 'If enabled, imported synaptic links are allowed to form autapses.',
+            onclick: e => {
+              this.allowAutapses = e.target.checked;
+            },
+          },
+        ]);
+
         controls.classList.add('vertical-settings');
 
-        // Autapses
-        let topWrapper = document.createElement('p');
-        topWrapper.style.width = '100%';
-        let autapses = CATMAID.DOM.createCheckboxSetting("Allow autapses",
-            this.allowAutapses,
-            "If enabled, imported synaptic links are allowed to form autapses.", e => {
-              this.allowAutapses = e.target.checked;
-            });
-        autapses.css('display', 'block');
-        $(topWrapper).append(autapses);
-        $(controls).append(topWrapper);
+        // Fetch active skeleton tab
+        CATMAID.DOM.appendToTab(tabs[activeSkeletonTab], [
+          {
+            type: 'numeric',
+            id: `distance_threshold${this.widgetID}`,
+            label: 'Max dist. from skeleton (nm)',
+            title: "If the distance between the skeleton and a candidate synapse is larger, the synapse is ignored.",
+            value: this.distance_threshold,
+            length: 5,
+            min: 0,
+            onchange: e => {
+              this.distance_threshold = parentInt(e.target.value, 10);
+            }
+          },
+          {
+            type: 'button',
+            label: 'Fetch synapses for active neuron',
+            onclick: e => this.fetch(),
+          },
+        ]);
 
-        let fetchSynHeader = controls.appendChild(document.createElement('h3'));
-        fetchSynHeader.appendChild(document.createTextNode('Fetch synapses for active skeleton'));
-
-        let fetchCutoffSetting = CATMAID.DOM.createNumericInputSetting('Max dist. from sekelton (nm)',
-            this.distance_threshold, 50, "If the distance between the skeleton and a candidate synapse is larger, the synapse is ignored.",
-            e => this.distance_threshold = parseInt(e.target.value,10));
-        fetchCutoffSetting.find('input').attr('id', `distance_threshold${this.widgetID}`);
-        $(controls).append(fetchCutoffSetting);
-
-        var fetch = document.createElement('input');
-        fetch.setAttribute("type", "button");
-        fetch.setAttribute("value", "Fetch synapses for active neuron");
-        fetch.onclick = this.fetch.bind(this);
-        controls.appendChild(fetch);
-
-        var optionFields = document.createElement('div');
-        optionFields.innerHTML = `
-        <table cellpadding="0" cellspacing="0" border="0"
-              id="circuitmap_flow2_option_fields${this.widgetID}">
-          <tr>
-            <td><h3>Fetch autoseg skeleton and synapses at location</h3></td>
-            <td></td>
-          </tr>
-        </table>
-        `;
-        controls.appendChild(optionFields);
-
-        // Reference lines
-        let refLines = CATMAID.DOM.createCheckboxSetting("Display reference lines",
-            CATMAID.StackViewer.Settings.session.display_stack_reference_lines,
-            "Show crossing lines that point to where segments are looked up", e => {
+        // Fetch location tab
+        CATMAID.DOM.appendToTab(tabs[locationTab], [
+          {
+            type: 'checkbox',
+            label: 'Display reference lines',
+            title: 'Show crossing lines that point to where segments are looked up',
+            value: CATMAID.StackViewer.Settings.session.display_stack_reference_lines,
+            onclick: e => {
               project.getStackViewers().forEach(s => s.showReferenceLines(e.target.checked));
-            });
-        refLines.css('display', 'block');
-        $(controls).append(refLines);
-
-        // Upstream autoseg partners
-        let fetchUpstreamThresholdInput = document.createElement('input');
-        fetchUpstreamThresholdInput.setAttribute('type', 'number');
-        fetchUpstreamThresholdInput.setAttribute('min', '0');
-        fetchUpstreamThresholdInput.setAttribute('style', 'width: 5em');
-        fetchUpstreamThresholdInput.setAttribute('value', this.upstream_syn_count);
-        fetchUpstreamThresholdInput.addEventListener('open', e => {
-          this.upstream_syn_count = parseInt(e.target.value, 10);
-        });
-        fetchUpstreamThresholdInput.setAttribute('id', `upstream_syn_count${this.widgetID}`);
-        fetchUpstreamThresholdInput.disabled = !this.fetch_upstream_skeletons;
-
-        let fetchUpstreamPartners = CATMAID.DOM.createCheckboxSetting("Fetch upstream autoseg partner skeletons connected via at least ",
-            this.fetch_upstream_skeletons,
-            "Import any upstream partner autoseg skeleton that is connected though a minimum of N synapses.", e => {
+            },
+          },
+          {
+            type: 'checkbox',
+            label: 'Fetch upstream autoseg partners linked via at least',
+            value: this.fetch_upstream_skeletons,
+            title: 'Import any upstream partner autoseg skeleton that is connected though a minimum of N synapses.',
+            onclick: e => {
               this.fetch_upstream_skeletons = e.target.checked;
-              fetchUpstreamThresholdInput.disabled = !e.target.checked;
-            });
-        fetchUpstreamPartners.css('display', 'block');
-        $(controls).append(fetchUpstreamPartners);
-        let fetchUpstreamPartnerLabel = fetchUpstreamPartners.find('label');
-        fetchUpstreamPartnerLabel.append(fetchUpstreamThresholdInput);
-        fetchUpstreamPartnerLabel.append('synapses');
-
-        // Downstream autoseg partners
-        let fetchDownstreamThresholdInput = document.createElement('input');
-        fetchDownstreamThresholdInput.setAttribute('type', 'number');
-        fetchDownstreamThresholdInput.setAttribute('min', '0');
-        fetchDownstreamThresholdInput.setAttribute('style', 'width: 5em');
-        fetchDownstreamThresholdInput.setAttribute('value', this.downstream_syn_count);
-        fetchDownstreamThresholdInput.addEventListener('open', e => {
-          this.downstream_syn_count = parseInt(e.target.value, 10);
-        });
-        fetchDownstreamThresholdInput.setAttribute('id', `downstream_syn_count${this.widgetID}`);
-        fetchDownstreamThresholdInput.disabled = !this.fetch_downstream_skeletons;
-
-        let fetchDownstreamPartners = CATMAID.DOM.createCheckboxSetting("Fetch downstream autoseg partner skeletons connected via at least ",
-            this.fetch_downstream_skeletons,
-            "Import any downstream partner autoseg skeleton that is connected through a minimum of N synapses.", e => {
+              let upstreamSynThresholdInput = document.querySelector(`#upstream_syn_count${this.widgetID}`);
+              if (upstreamSynThresholdInput) {
+                upstreamSynThresholdInput.disabled = !e.target.checked;
+              }
+            },
+          },
+          {
+            type: 'numeric',
+            label: '',
+            postlabel: 'synapses',
+            value: this.upstream_syn_count,
+            length: 3,
+            min: 0,
+            id: `upstream_syn_count${this.widgetID}`,
+            disabled: !this.fetch_upstream_skeletons,
+            onchange: e => {
+              this.upstream_syn_count = parseInt(e.target.value, 10);
+            },
+          },
+          {
+            type: 'checkbox',
+            label: 'Fetch downstream autoseg partners linked via at least',
+            value: this.fetch_downstream_skeletons,
+            title: 'Import any downstream partner autoseg skeleton that is connected though a minimum of N synapses.',
+            onclick: e => {
               this.fetch_downstream_skeletons = e.target.checked;
-              fetchDownstreamThresholdInput.disabled = !e.target.checked;
-            });
-        fetchDownstreamPartners.css('display', 'block');
-        $(controls).append(fetchDownstreamPartners);
+              let downstreamSynThresholdInput = document.querySelector(`#downstream_syn_count${this.widgetID}`);
+              if (downstreamSynThresholdInput) {
+                downstreamSynThresholdInput.disabled = !e.target.checked;
+              }
+            },
+          },
+          {
+            type: 'numeric',
+            label: '',
+            postlabel: 'synapses',
+            value: this.downstream_syn_count,
+            length: 3,
+            min: 0,
+            id: `downstream_syn_count${this.widgetID}`,
+            disabled: !this.fetch_downstream_skeletons,
+            onchange: e => {
+              this.downstream_syn_count = parseInt(e.target.value, 10);
+            },
+          },
+          {
+            type: 'button',
+            label: 'Fetch autoseg skeleton and synapses at location',
+            onclick: e => this.fetch_location(),
+          },
+        ]);
 
-        let fetchDownstreamPartnerLabel = fetchDownstreamPartners.find('label');
-        fetchDownstreamPartnerLabel.append(fetchDownstreamThresholdInput);
-        fetchDownstreamPartnerLabel.append('synapses');
-
-        var fetch = document.createElement('input');
-        fetch.classList.add('clear');
-        fetch.setAttribute("type", "button");
-        fetch.setAttribute("value", "Fetch autoseg skeleton and synapses at location");
-        fetch.onclick = this.fetch_location.bind(this);
-        controls.appendChild(fetch);
+        $(controls).tabs();
       },
       contentID: this.idPrefix + 'content',
       createContent: function(container) {
@@ -189,12 +202,12 @@
         let atnType = SkeletonAnnotations.getActiveNodeType();
         if (atnType === SkeletonAnnotations.TYPE_NODE) {
           let skeletonId = SkeletonAnnotations.getActiveSkeletonId();
-          this.content.dataset.msg = `Fetch all synapses for the active skeleton with ID #${skeletonId} or find a segmentation fragment plus its synapses for the current location.`;
+          this.content.dataset.msg = `Fetch all synapses for the active skeleton with ID #${skeletonId} or find a segmentation fragment plus its synapses for the current location using the respective tab above.`;
         } else {
-          this.content.dataset.msg = "Select a skeleton to fetch synapses for or fetch a segmentation fragment plus its synapses for the current location.";
+          this.content.dataset.msg = "Please select the active skeleton tab or the location tab to import synapses.";
         }
       } else {
-        this.content.dataset.msg = "Select a skeleton to fetch synapses for or fetch a segmentation fragment plus its synapses for the current location.";
+          this.content.dataset.msg = "Please select a skeleton and use the active skeleton tab or use the location tab to import synapses.";
       }
     }
   };
@@ -317,6 +330,12 @@
       }
     } else {
       this.updateMessage(`Completed task of unnknown type: ${info.task}`);
+    }
+  };
+
+  CircuitmapWidget.prototype.refresh = function() {
+    if (this.importTable) {
+      this.importTable.rows().invalidate().draw();
     }
   };
 
