@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """Methods called by API endpoints"""
 from rest_framework.decorators import api_view
-from django.http import HttpRequest, JsonResponse
+from rest_framework.views import APIView
+from django.http import HttpRequest, JsonResponse, HttpResponse
 from django.db import connection
+from django.utils.decorators import method_decorator
 
 import numpy as np
 import pandas as pd
@@ -11,6 +13,7 @@ import fafbseg
 import networkx as nx
 import sqlite3
 import logging
+from timeit import default_timer as timer
 
 from cloudvolume import CloudVolume
 from cloudvolume.datasource.precomputed.skeleton.sharded import ShardedPrecomputedSkeletonSource
@@ -20,12 +23,14 @@ from celery.utils.log import get_task_logger
 
 from .settings import *
 from circuitmap import CircuitMapError
+from circuitmap.models import SynapseImport, SegmentImport
 from django.conf import settings
 
 from catmaid.control.common import get_request_bool
 from catmaid.consumers import msg_user
-from catmaid.models import Message, User
+from catmaid.models import Message, User, UserRole
 from catmaid.control.message import notify_user
+from catmaid.control.authentication import requires_user_role
 
 cv = CloudVolume(CLOUDVOLUME_URL, use_https=True, parallel=False)
 cv.meta.info['skeletons'] = CLOUDVOLUME_SKELETONS
@@ -200,7 +205,7 @@ def fetch_synapses(request: HttpRequest, project_id=None):
     upstream_syn_count = int(request.POST.get('upstream_syn_count', 5 ))
     downstream_syn_count = int(request.POST.get('downstream_syn_count', 5 ))
 
-    source_hash = request.POST.get('source_hash')
+    request_id = request.POST.get('request_id')
 
     pid = int(project_id)
 
@@ -208,17 +213,20 @@ def fetch_synapses(request: HttpRequest, project_id=None):
         raise ValueError(f"Invalid location coordinate: ({x}, {y}, {z})")
 
     msg_payload = {
-        'source_hash': source_hash,
+        'request_id': request_id,
     }
 
+    status = dict()
     if active_skeleton_id == -1:
 
         msg_payload['task'] = 'import-location'
         msg_payload['x'], msg_payload['y'], msg_payload['z'] = x, y, z
 
+        voxel_x, voxel_y, voxel_z = x//2, y//2, z
+
         # look up segment id at location and fetch synapses        
         try:
-            segment_id = int(cv[x//2,y//2,z,0][0][0][0][0])
+            segment_id = int(cv[voxel_x,voxel_y,voxel_z,0][0][0][0][0])
         except Exception as ex:
             task_logger.debug('Exception occurred: {}'.format(ex))
             segment_id = None
@@ -228,34 +236,88 @@ def fetch_synapses(request: HttpRequest, project_id=None):
             raise CircuitMapError(f"No segment found at stack location ({x}, {y}, {z})")
         else:
             task_logger.debug('spawn task: import_autoseg_skeleton_with_synapses')
+            # Create result entry
+            synapse_import = SynapseImport.objects.create(user=request.user,
+                    project_id=pid, request_id=request_id,
+                    skeleton_id=-1, status=SynapseImport.Status.QUEUED,
+                    upstream_partner_syn_threshold=upstream_syn_count,
+                    downsteam_partner_syn_threshold=downstream_syn_count,
+                    distance_threshold=distance_threshold,
+                    with_autapses=with_autapses)
+            segment_import = SegmentImport.objects.create(
+                    synapse_import=synapse_import, segment_id=segment_id,
+                    source=CLOUDVOLUME_URL,
+                    voxel_x=voxel_x, voxel_y=voxel_y, voxel_z=voxel_z,
+                    physical_x=x, physical_y=y, physical_z=z)
 
-            task = import_autoseg_skeleton_with_synapses.delay(pid, request.user.id,
-                segment_id, True, msg_payload, with_autapses)
+            import_synapses_and_segment.delay(pid, request.user.id,
+                    synapse_import.id, segment_id, fetch_upstream,
+                    fetch_downstream, upstream_syn_count, downstream_syn_count,
+                    True, msg_payload, with_autapses)
 
-            msg_payload['task'] = 'import-location-partners'
 
-            task_logger.debug('call: import_upstream_downstream_partners')
-            task  = import_upstream_downstream_partners.delay(segment_id,
-                    request.user.id, fetch_upstream, fetch_downstream, pid,
-                    upstream_syn_count, downstream_syn_count, True, msg_payload,
-                    with_autapses)
-
-            return JsonResponse({'project_id': pid, 'segment_id': str(segment_id)})
-
+            return JsonResponse({
+                'project_id': pid,
+                'segment_id': str(segment_id),
+                'import_ref': synapse_import.id
+            })
     else:
+        # Create result entry
+        synapse_import = SynapseImport.objects.create(user=request.user,
+                project_id=pid, request_id=request_id,
+                skeleton_id=active_skeleton_id,
+                status=SynapseImport.Status.QUEUED,
+                upstream_partner_syn_threshold=upstream_syn_count,
+                downsteam_partner_syn_threshold=downstream_syn_count,
+                distance_threshold=distance_threshold,
+                with_autapses=with_autapses)
+
         # fetch synapses for manual skeleton
-        task = import_synapses_for_existing_skeleton.delay(pid, request.user.id,
-            distance_threshold, active_skeleton_id, None, True, msg_payload,
+        import_synapses_for_existing_skeleton.delay(pid, request.user.id,
+            synapse_import.id, distance_threshold, active_skeleton_id, None,
+            True, msg_payload, with_autapses)
+
+        return JsonResponse({
+            'project_id': pid,
+            'import_ref': synapse_import.id,
+        })
+
+
+@task
+def import_synapses_and_segment(project_id, user_id, import_id, segment_id,
+        fetch_upstream, fetch_downstream, upstream_syn_count,
+        downstream_syn_count, message_user=True, message_payload=None,
+        with_autapses=False):
+
+    start_time = timer()
+
+    message_payload['task'] = 'import-location-partners'
+    task_logger.debug('call: import_autoseg_skeleton_with_synapses')
+    seg_import_task = import_autoseg_skeleton_with_synapses(project_id,
+            user_id, import_id, segment_id, message_user, message_payload,
             with_autapses)
-        
-        return JsonResponse({'project_id': pid})
+
+    task_logger.debug('call: import_upstream_downstream_partners')
+    partner_import_task  = import_upstream_downstream_partners(project_id,
+            user_id, import_id, segment_id, fetch_upstream, fetch_downstream,
+            upstream_syn_count, downstream_syn_count, message_user, message_payload,
+            with_autapses)
+
+    # Only attempt to load import data after the processing is done to not
+    # override the newly createad state.
+    synapse_import = SynapseImport.objects.get(id=import_id)
+    if synapse_import.status != SynapseImport.Status.ERROR:
+        synapse_import.status = SynapseImport.Status.DONE
+    synapse_import.runtime = timer() - start_time
+    synapse_import.save()
 
 @task()
-def import_upstream_downstream_partners(segment_id, user_id, fetch_upstream, fetch_downstream,
-	pid, upstream_syn_count, downstream_syn_count, message_user=True,
-        message_payload=None, with_autapses=False):
+def import_upstream_downstream_partners(project_id, user_id, import_id, segment_id,
+        fetch_upstream, fetch_downstream, upstream_syn_count,
+        downstream_syn_count, message_user=True, message_payload=None,
+        with_autapses=False):
     error = None
-    n_upsteam_partners = 0
+    n_upstream_partners = 0
     n_downstream_partners = 0
     try:
         task_logger.info(f'task: import_upstream_downstream_partners start {segment_id}')
@@ -267,14 +329,15 @@ def import_upstream_downstream_partners(segment_id, user_id, fetch_upstream, fet
         g = load_subgraph(cur, segment_id)
 
         task_logger.debug('start fetching ...')
-        n_upsteam_partners = 0
+        n_upstream_partners = 0
         if fetch_upstream:
             upstream_partners = get_presynaptic_skeletons(g, segment_id, synaptic_count_threshold = upstream_syn_count)
-            n_upsteam_partners = len(upstream_partners)
+            n_upstream_partners = len(upstream_partners)
             for partner_segment_id in upstream_partners:
                 task_logger.debug(f'spawn task for presynaptic segment_id {partner_segment_id}')
                 task = import_autoseg_skeleton_with_synapses.delay(pid, user_id,
-                    partner_segment_id, False, with_autapses=with_autapses)
+                        import_id, partner_segment_id, False,
+                        with_autapses=with_autapses, set_status=False)
 
         n_downstream_partners = 0
         if fetch_downstream:
@@ -283,13 +346,14 @@ def import_upstream_downstream_partners(segment_id, user_id, fetch_upstream, fet
             for partner_segment_id in downstream_partners:
                 task_logger.debug(f'spawn task for postsynaptic segment_id {partner_segment_id}')
                 task = import_autoseg_skeleton_with_synapses.delay(pid, user_id,
-                    partner_segment_id, False, with_autapses=with_autapses)
+                        import_id, partner_segment_id, False,
+                        with_autapses=with_autapses, set_status=False)
 
         if message_user:
             payload = {
                 'task': 'import-partner-fragments',
                 'segment_id': segment_id,
-                'n_upsteam_partners': n_upsteam_partners,
+                'n_upstream_partners': n_upstream_partners,
                 'n_downstream_partners': n_downstream_partners,
             }
             if message_payload:
@@ -315,9 +379,9 @@ def import_upstream_downstream_partners(segment_id, user_id, fetch_upstream, fet
             msg.text = f"No partners could be created due to the following error: {error}"
             msg.action = ""
         else:
-            msg.title = f"Synapses imported for skeleton #{active_skeleton_id}"
+            msg.title = f"Synapses imported for skeleton #{segment_id}"
             msg.title = f"Imported {' and '.join(partners)} partners for skeleton/fragment #{segment_id}"
-            msg.text = (f"Imported {n_upsteam_partners} upstream partners and " +
+            msg.text = (f"Imported {n_upstream_partners} upstream partners and " +
                 "{n_downstream_partners} partners for skeleton/fragment #{segment_id}")
             msg.action = f"?pid={project_id}&active_skeleton_id={segment_id}&tool=tracingtool"
         msg.save()
@@ -325,10 +389,10 @@ def import_upstream_downstream_partners(segment_id, user_id, fetch_upstream, fet
         notify_user(user.id, msg.id, msg.title)
 
         payload = {
-            'task': 'import-synapses',
-            'n_inserted_synapses': len(connectors),
-            'n_inserted_links': len(treenode_connector),
-            'skeleton_id': active_skeleton_id,
+            'task': 'import-partner-fragments',
+            'segment_id': segment_id,
+            'n_upstream_partners': n_upstream_partners,
+            'n_downstream_partners': n_downstream_partners,
         }
         if error:
             payload['error'] = str(error)
@@ -349,15 +413,26 @@ def import_upstream_downstream_partners(segment_id, user_id, fetch_upstream, fet
 #async def _import_synapses_for_existing_skeleton(project_id, user_id, distance_threshold, active_skeleton_id,
 
 @task()
-def import_synapses_for_existing_skeleton(project_id, user_id, distance_threshold, active_skeleton_id,
-        autoseg_segment_id = None, message_user=True, message_payload=None,
-        with_autapses=False):
+def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
+        distance_threshold, active_skeleton_id, autoseg_segment_id = None,
+        message_user=True, message_payload=None, with_autapses=False,
+        set_status=True):
+    """Find and import all synapses for the existing skeleton. If status is
+    provided.
+    """
     task_logger.debug('task: import_synapses_for_existing_skeleton started')
     error = None
     connectors = {}
     treenode_connector = {}
+    start_time = timer()
 
+    synapse_import = None
     try:
+        # Set status to computing
+        synapse_import = SynapseImport.objects.get(id=import_id)
+        synapse_import.status = SynapseImport.Status.COMPUTING
+        synapse_import.save()
+
         # retrieve skeleton with all nodes directly from the database
         cursor = connection.cursor()
         cursor.execute('''
@@ -587,10 +662,23 @@ def import_synapses_for_existing_skeleton(project_id, user_id, distance_threshol
             cursor.execute('\n'.join(queries))
             task_logger.debug('multiquery done')
 
+        if set_status:
+            synapse_import.status = SynapseImport.Status.DONE
+            synapse_import.status_detail = ""
+        synapse_import.runtime = timer() - start_time
+        synapse_import.n_imported_connectors = len(connectors)
+        synapse_import.n_imported_links = len(treenode_connector)
+        synapse_import.save()
         task_logger.debug('task: import_synapses_for_existing_skeleton started: done')
     except Exception as ex:
         error = ex
         task_logger.error(f'Exception occurred: {ex}')
+        if synapse_import:
+            duration = timer() - start_time
+            synapse_import.runtime = duration
+            synapse_import.status = SynapseImport.Status.ERROR
+            synapse_import.status_detail = str(error)
+            synapse_import.save()
 
     if message_user:
         task_logger.debug('Creating user message')
@@ -630,8 +718,16 @@ def import_synapses_for_existing_skeleton(project_id, user_id, distance_threshol
 
 
 @task
-def import_autoseg_skeleton_with_synapses(project_id, user_id, segment_id,
-        message_user=True, message_payload=None, with_autapses=False):
+def import_autoseg_skeleton_with_synapses(project_id, user_id, import_id,
+        segment_id, message_user=True, message_payload=None,
+        with_autapses=False, set_status=True):
+
+    synapse_import = SynapseImport.objects.get(id=import_id)
+    segment_import = synapse_import.segmentimport_set.all()
+    if len(segment_import) > 1:
+        raise ValueError('Expected single segment import entry')
+    else:
+        segment_import = segment_import[0]
 
     try:
         # ID handling: method globally unique ID
@@ -652,6 +748,9 @@ def import_autoseg_skeleton_with_synapses(project_id, user_id, segment_id,
 
         if not res is None:
             node_id, skeleton_class_instance_id = res
+            if set_status:
+                synapse_import.skeleton_id = skeleton_class_instance_id
+                synapse_import.save()
             task_logger.debug('autoseg skeleton was previously imported. skip reimport. (current skeletonid is {})'.format(skeleton_class_instance_id))
         else:        
             # fetch and insert autoseg skeleton at location
@@ -759,6 +858,7 @@ def import_autoseg_skeleton_with_synapses(project_id, user_id, segment_id,
                 cursor.execute(query)
 
             # insert all chidren
+            n_imported_nodes = 0
             for parent_id, skeleton_node_id in new_tree.edges(data=False):
                 n = g2.nodes[skeleton_node_id]
                 query = """INSERT INTO treenode (id,project_id, location_x, location_y, location_z, editor_id,
@@ -778,12 +878,19 @@ def import_autoseg_skeleton_with_synapses(project_id, user_id, segment_id,
                     queries.append(query)
                 else:
                     cursor.execute(query)
+                n_imported_nodes += 1
 
             query = 'COMMIT;'
             if with_multi:
                 queries.append(query)
             else:
                 cursor.execute(query)
+
+            if set_status:
+                synapse_import.skeleton_id = skeleton_class_instance_id
+                synapse_import.save()
+            segment_import.n_imported_nodes += n_imported_nodes
+            segment_import.save()
 
             task_logger.debug('run multiquery')
             if with_multi:
@@ -792,12 +899,59 @@ def import_autoseg_skeleton_with_synapses(project_id, user_id, segment_id,
         # call import_synapses_for_existing_skeleton with autoseg skeleton as seed
         task_logger.debug('call task: import_synapses_for_existing_skeleton')
 
-        import_synapses_for_existing_skeleton(project_id, user_id,
+        import_synapses_for_existing_skeleton(project_id, user_id, import_id,
             -1,  skeleton_class_instance_id, segment_id, message_user,
-            message_payload, with_autapses)
+            message_payload, with_autapses, set_status=False)
 
         task_logger.debug('task: import_autoseg_skeleton_with_synapses done')
 
 
     except Exception as ex:
         task_logger.error(f'Exception occurred: {ex}')
+
+
+class SynapseImportList(APIView):
+
+    @method_decorator(requires_user_role(UserRole.Browse))
+    def get(self, request:HttpRequest, project_id) -> JsonResponse:
+        """List all available point clouds or optionally a sub set.
+        ---
+        parameters:
+          - name: project_id
+            description: Project of the returned synapse imports
+            type: integer
+            paramType: path
+            required: true
+        """
+        cursor = connection.cursor()
+        cursor.execute("""
+            SELECT id, user_id, project_id, creation_time, edition_time, status,
+                status_detail, runtime, request_id, skeleton_id, n_imported_links,
+                n_imported_connectors, n_upstream_partners, n_downstream_partners,
+                upstream_partner_syn_threshold, downsteam_partner_syn_threshold,
+                distance_threshold, with_autapses
+            FROM circuitmap_synapseimport si
+            WHERE project_id = %(project_id)s
+        """, {
+            'project_id': project_id,
+        })
+        return JsonResponse([{
+            'id': r[0],
+            'user_id': r[1],
+            'project_id': r[2],
+            'creation_time': r[3],
+            'edition_time': r[4],
+            'status': SynapseImport.Status.labels[r[5]],
+            'status_detail': r[6],
+            'runtime': r[7],
+            'request_id': r[8],
+            'skeleton_id': r[9],
+            'n_imported_links': r[10],
+            'n_imported_connectors': r[11],
+            'n_upstream_partners': r[12],
+            'n_downstream_partners': r[13],
+            'upstream_partner_syn_threshold': r[14],
+            'downsteam_partner_syn_threshold': r[15],
+            'distance_threshold': r[16],
+            'with_autapses': r[17],
+        } for r in cursor.fetchall()], safe=False)
