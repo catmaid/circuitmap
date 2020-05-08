@@ -12,4 +12,5 @@ urlpatterns = [
     url(r'^index$', circuitmap.control.index),
     url(r'^test$', circuitmap.control.test),
     url(r'^(?P<project_id>\d+)/synapses/fetch$', circuitmap.control.fetch_synapses),
+    url(r'^(?P<project_id>\d+)/imports/$', circuitmap.control.SynapseImportList.as_view()),
 ]

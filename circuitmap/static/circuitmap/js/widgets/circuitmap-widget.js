@@ -21,6 +21,9 @@
     this.autoSelectResultSkeleton = true;
     this.allowAutapses = false;
 
+    // The UI representation of past and current imports
+    this.importTable = null;
+
     SkeletonAnnotations.on(SkeletonAnnotations.EVENT_ACTIVE_NODE_CHANGED,
         this.handleActiveNodeChange, this);
   };
@@ -158,6 +161,147 @@
       createContent: function(container) {
         this.content = container;
         this.updateMessage();
+
+        let importTable = container.appendChild(document.createElement('table'));
+        this.importTable = $(importTable).DataTable({
+          dom: "lrphtip",
+          paging: true,
+          order: [[0, 'desc']],
+          autoWidth: false,
+          lengthMenu: [CATMAID.pageLengthOptions, CATMAID.pageLengthLabels],
+          ajax: (data, callback, settings) => {
+            CATMAID.fetch(`/ext/circuitmap/${project.id}/imports/`)
+              .then(importData => {
+                let skeletonIds = importData.map(r => r.skeleton_id).filter(skid => skid !== -1);
+                return CATMAID.NeuronNameService.getInstance().registerAllFromList(this, skeletonIds)
+                  .then(() => importData);
+              })
+              .then(importData => callback({
+                  draw: data.draw,
+                  data: importData,
+              }))
+              .catch(CATMAID.handleError);
+          },
+          columns: [
+            {
+              title: 'ID',
+              data: 'id',
+            },
+            {
+              title: 'User',
+              data: 'user_id',
+              render: function(data, type, row, meta) {
+                return CATMAID.User.safe_get(row.user_id).login;
+              }
+            },
+            {
+              title: 'Neuron',
+              data: 'skeleton_id',
+              render: function(data, type, row, meta) {
+                let name = CATMAID.NeuronNameService.getInstance().getName(data);
+                return '<a href="#" class="neuron-selection-link" data-role="select-skeleton">' +
+                  (name ? name : "(not yet available)") + '</a>';
+              }
+            }, {
+              title: "Status",
+              data: "status",
+              orderable: true,
+              class: 'cm-center',
+              render: function(data, type, row, meta) {
+                let status = row.status_detail && row.status_detail.length > 0 ?
+                    row.status_detail : 'No details availale';
+                return `<span title="${status}">${data}</a>`;
+              }
+            }, {
+              title: "Last update (UTC)",
+              data: "edition_time",
+              class: "cm-center",
+              searchable: true,
+              orderable: true,
+              render: function(data, type, row, meta) {
+                if (type === 'display') {
+                  var date = CATMAID.tools.isoStringToDate(row.creation_time);
+                  if (date) {
+                    return CATMAID.tools.dateToString(date);
+                  } else {
+                    return "(parse error)";
+                  }
+                } else {
+                  return data;
+                }
+              }
+            }, {
+              data: "runtime",
+              title: "Runtime",
+              orderable: true,
+              class: 'cm-center',
+              render: function(data, type, row, meta) {
+                return data ? (Math.round(data) + 's') : 'N/A';
+              },
+            }, {
+              data: "n_imported_links",
+              title: "# New links",
+              class: "cm-center",
+              searchable: true,
+              orderable: true,
+            }, {
+              data: "n_imported_connectors",
+              title: "# New connectors",
+              class: "cm-center",
+              searchable: true,
+              orderable: true,
+            }, {
+              data: "n_upstream_partners",
+              title: "# New up. partners",
+              class: "cm-center",
+              searchable: true,
+              orderable: true,
+            }, {
+              data: "n_downstream_partners",
+              title: "# New down. partners",
+              class: "cm-center",
+              searchable: true,
+              orderable: true,
+            }, {
+              data: "upstream_partner_syn_threshold",
+              title: "Up. syn thrsh.",
+              class: "cm-center",
+              searchable: true,
+              orderable: true,
+            }, {
+              data: "downsteam_partner_syn_threshold",
+              title: "Down. syn thrsh.",
+              class: "cm-center",
+              searchable: true,
+              orderable: true,
+            }, {
+              data: "distance_threshold",
+              title: "Dist. thrsh..",
+              class: "cm-center",
+              searchable: true,
+              orderable: true,
+            }, {
+              data: "with_autapses",
+              title: "Autapses",
+              class: "cm-center",
+              searchable: true,
+              orderable: true,
+              render: function(data, type, row, meta) {
+                return data ? "Yes" : "No";
+              },
+            },
+          ],
+          language: {
+            emptyTable: 'No imports found',
+          },
+        }).on('click', 'a[data-role=select-skeleton]', e => {
+          let data = this.importTable.row($(e.target).parents('tr')).data();
+          if (data.skeleton_id === -1) {
+            CATMAID.warn('Skeleton for segment not yet imported');
+            return;
+          }
+          CATMAID.TracingTool.goToNearestInNeuronOrSkeleton('skeleton', data.skeleton_id);
+        });
       },
       init: function() {
         var self = this;
@@ -231,7 +375,7 @@
       'upstream_syn_count': this.upstream_syn_count,
       'downstream_syn_count': this.downstream_syn_count,
       'active_skeleton': activeSkeletonId,
-      'source_hash': this.sourceHash,
+      'request_id': this.sourceHash,
       'with_autapses': this.allowAutapses,
     };
 
@@ -239,9 +383,11 @@
     CATMAID.fetch('ext/circuitmap/' + project.id + '/synapses/fetch', 'POST', query_data)
       .then(e => {
         CATMAID.msg("Success", "Import process started ...");
+        this.refresh();
       })
       .catch(e => {
         this.updateMessage(`An error occured while fetching synapses for skeleton #{activeSkeletonId}: ${e}`);
+        this.refresh();
         if (e.type !== 'CircuitMapError') {
           CATMAID.handleError(e);
         } else {
@@ -256,25 +402,27 @@
 
     var query_data = {
       'x': stackViewer.x,
-      'y':  stackViewer.y,
-      'z':  stackViewer.z,
+      'y': stackViewer.y,
+      'z': stackViewer.z,
       'fetch_upstream': this.fetch_upstream_skeletons,
       'fetch_downstream': this.fetch_downstream_skeletons,
       'distance_threshold': this.distance_threshold,
       'upstream_syn_count': this.upstream_syn_count,
       'downstream_syn_count': this.downstream_syn_count,
       'active_skeleton': -1,
-      'source_hash': this.sourceHash,
+      'request_id': this.sourceHash,
       'with_autapses': this.allowAutapses,
     };
 
     this.updateMessage(`Fetching segment and synapses for stack location (${stackViewer.x}, ${stackViewer.y}, ${stackViewer.z})`);
     CATMAID.fetch('ext/circuitmap/' + project.id + '/synapses/fetch', 'POST', query_data)
-      .then(function(e) {
+      .then((e) => {
         CATMAID.msg("Success", "Import process started ...");
+        this.refresh();
       })
       .catch(e => {
         this.updateMessage(`An error occured while fetching segment and synapses for stack location (${stackViewer.x}, ${stackViewer.y}, ${stackViewer.z}): ${e.message}`);
+        this.refresh();
         if (e.type !== 'CircuitMapError') {
           CATMAID.handleError(e);
         } else {
@@ -331,11 +479,12 @@
     } else {
       this.updateMessage(`Completed task of unnknown type: ${info.task}`);
     }
+    this.refresh();
   };
 
   CircuitmapWidget.prototype.refresh = function() {
     if (this.importTable) {
-      this.importTable.rows().invalidate().draw();
+      this.importTable.ajax.reload();
     }
   };
 
@@ -349,7 +498,7 @@
   };
 
   CircuitmapWidget.handleCircuitMapTaskUpdate = function(client, info) {
-    let widget = CircuitmapWidget.findWidgetWithSourceHash(info.source_hash);
+    let widget = CircuitmapWidget.findWidgetWithSourceHash(info.request_id);
     if (widget) {
       widget.handleCircuitMapTaskUpdate(info);
     }
