@@ -401,10 +401,19 @@
     this.updateMessage();
   };
 
-  CircuitmapWidget.prototype.fetch = function() {
+  CircuitmapWidget.prototype.fetch = function(skipConfirm=false) {
+    // We can assume the neuron is registered and available as a name
+    let activeSkeletonId = SkeletonAnnotations.getActiveSkeletonId();
+    if (!activeSkeletonId) {
+      CATMAID.warn('No skeleton selected');
+      return;
+    }
+    let neuronName = CATMAID.NeuronNameService.getInstance().getName(activeSkeletonId);
+    if (!skipConfirm && !confirm(`Are you sure to attempt the import of the synapses for neuron "${neuronName}"?`)) {
+      return;
+    }
     var stackViewer = project.focusedStackViewer;
     var stack = project.focusedStackViewer.primaryStack;
-    let activeSkeletonId = SkeletonAnnotations.getActiveSkeletonId();
 
     var query_data = {
       'x': stackViewer.x,
@@ -441,7 +450,10 @@
       });
   };
 
-  CircuitmapWidget.prototype.fetch_location = function() {
+  CircuitmapWidget.prototype.fetch_location = function(skipConfirm=false) {
+    if (!skipConfirm && !confirm('Are you sure to attempt the import of a segmentation fragment along with its synapses?')) {
+      return;
+    }
     var stackViewer = project.focusedStackViewer;
     var stack = project.focusedStackViewer.primaryStack;
 
