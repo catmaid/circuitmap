@@ -26,7 +26,7 @@ from circuitmap import CircuitMapError
 from circuitmap.models import SynapseImport, SegmentImport
 from django.conf import settings
 
-from catmaid.control.common import get_request_bool
+from catmaid.control.common import get_request_bool, get_request_list
 from catmaid.consumers import msg_user
 from catmaid.models import Message, User, UserRole
 from catmaid.control.message import notify_user
@@ -67,19 +67,19 @@ def get_links_from_offset(cursor, offsets, table='circuitmap_synlinks'):
 def load_subgraph(cursor, start_segment_id, order = 0):
     """ Return a NetworkX graph with segments as nodes and synaptic connection
     as edges with synapse counts
-    
+
     start_segment_id: starting segment for subgraph loading
-    
+
     order: number of times to expand along edges
     """
     fetch_segments = set([start_segment_id])
     fetched_segments = set()
     g = nx.DiGraph()
-        
+
     for ordern in range(order+1):
         task_logger.debug(f'order {ordern} need to fetch {len(fetch_segments)} segments')
         for i, segment_id in enumerate(list(fetch_segments)):
-            
+
             task_logger.debug(f'process segment {i} with segment_id {segment_id}')
 
             task_logger.debug('retrieve pre_links')
@@ -111,18 +111,18 @@ def load_subgraph(cursor, start_segment_id, order = 0):
                     g.add_edge(from_id, to_id, count= 1)
 
             fetched_segments.add(segment_id)
-            
+
             if len(pre_links) > 0:
                 all_postsynaptic_segments = set(pre_links['segmentid_post'])
                 fetch_segments = fetch_segments.union(all_postsynaptic_segments)
-            
+
             if len(post_links) > 0:
                 all_presynaptic_segments = set(post_links['segmentid_pre'])
                 fetch_segments = fetch_segments.union(all_presynaptic_segments)
-        
+
         # remove all segments that were already fetched
         fetch_segments = fetch_segments.difference(fetched_segments)
-        
+
         # always remove 0
         if 0 in fetch_segments:
             fetch_segments.remove(0)
@@ -152,7 +152,7 @@ def get_postsynaptic_skeletons(g, segment_id, synaptic_count_threshold = 0):
 
 
 @api_view(['GET'])
-def get_neighbors_graph(request, segment_id):    
+def get_neighbors_graph(request, segment_id):
     cur = connection.cursor()
     g = load_subgraph(cur, segment_id, order = 0)
     from networkx.readwrite import json_graph
@@ -160,7 +160,7 @@ def get_neighbors_graph(request, segment_id):
 
 
 @api_view(['GET'])
-def get_synapses(request, segment_id):    
+def get_synapses(request, segment_id):
     cur = connection.cursor()
 
     task_logger.debug('retrieve pre_links')
@@ -204,6 +204,8 @@ def fetch_synapses(request: HttpRequest, project_id=None):
     active_skeleton_id = int(request.POST.get('active_skeleton', -1 ))
     upstream_syn_count = int(request.POST.get('upstream_syn_count', 5 ))
     downstream_syn_count = int(request.POST.get('downstream_syn_count', 5 ))
+    annotations = [a.strip() for a in get_request_list(request.POST, 'annotations', [])]
+    tags = [a.strip() for a in get_request_list(request.POST, 'tags', [])]
 
     request_id = request.POST.get('request_id')
 
@@ -224,7 +226,7 @@ def fetch_synapses(request: HttpRequest, project_id=None):
 
         voxel_x, voxel_y, voxel_z = x//2, y//2, z
 
-        # look up segment id at location and fetch synapses        
+        # look up segment id at location and fetch synapses
         try:
             segment_id = int(cv[voxel_x,voxel_y,voxel_z,0][0][0][0][0])
         except Exception as ex:
@@ -235,7 +237,6 @@ def fetch_synapses(request: HttpRequest, project_id=None):
         if segment_id is None or segment_id == 0:
             raise CircuitMapError(f"No segment found at stack location ({x}, {y}, {z})")
         else:
-            task_logger.debug('spawn task: import_autoseg_skeleton_with_synapses')
             # Create result entry
             synapse_import = SynapseImport.objects.create(user=request.user,
                     project_id=pid, request_id=request_id,
@@ -253,7 +254,7 @@ def fetch_synapses(request: HttpRequest, project_id=None):
             import_synapses_and_segment.delay(pid, request.user.id,
                     synapse_import.id, segment_id, fetch_upstream,
                     fetch_downstream, upstream_syn_count, downstream_syn_count,
-                    True, msg_payload, with_autapses)
+                    True, msg_payload, with_autapses, annotations, tags)
 
 
             return JsonResponse({
@@ -275,7 +276,7 @@ def fetch_synapses(request: HttpRequest, project_id=None):
         # fetch synapses for manual skeleton
         import_synapses_for_existing_skeleton.delay(pid, request.user.id,
             synapse_import.id, distance_threshold, active_skeleton_id, None,
-            True, msg_payload, with_autapses)
+            True, msg_payload, with_autapses, annotations=annotations, tags=tags)
 
         return JsonResponse({
             'project_id': pid,
@@ -287,21 +288,22 @@ def fetch_synapses(request: HttpRequest, project_id=None):
 def import_synapses_and_segment(project_id, user_id, import_id, segment_id,
         fetch_upstream, fetch_downstream, upstream_syn_count,
         downstream_syn_count, message_user=True, message_payload=None,
-        with_autapses=False):
+        with_autapses=False, annotations=None, tags=None):
 
     start_time = timer()
 
     message_payload['task'] = 'import-location-partners'
+    task_logger.debug('task: import_synapses_and_segment')
     task_logger.debug('call: import_autoseg_skeleton_with_synapses')
     seg_import_task = import_autoseg_skeleton_with_synapses(project_id,
             user_id, import_id, segment_id, message_user, message_payload,
-            with_autapses)
+            with_autapses, annotations=annotations, tags=tags)
 
     task_logger.debug('call: import_upstream_downstream_partners')
-    partner_import_task  = import_upstream_downstream_partners(project_id,
+    partner_import_task = import_upstream_downstream_partners(project_id,
             user_id, import_id, segment_id, fetch_upstream, fetch_downstream,
             upstream_syn_count, downstream_syn_count, message_user, message_payload,
-            with_autapses)
+            with_autapses, annotations=annotations, tags=tags)
 
     # Only attempt to load import data after the processing is done to not
     # override the newly createad state.
@@ -310,12 +312,13 @@ def import_synapses_and_segment(project_id, user_id, import_id, segment_id,
         synapse_import.status = SynapseImport.Status.DONE
     synapse_import.runtime = timer() - start_time
     synapse_import.save()
+    task_logger.debug('task: import_synapses_and_segment: done')
 
 @task()
 def import_upstream_downstream_partners(project_id, user_id, import_id, segment_id,
         fetch_upstream, fetch_downstream, upstream_syn_count,
         downstream_syn_count, message_user=True, message_payload=None,
-        with_autapses=False):
+        with_autapses=False, annotations=None, tags=None):
     error = None
     n_upstream_partners = 0
     n_downstream_partners = 0
@@ -337,7 +340,8 @@ def import_upstream_downstream_partners(project_id, user_id, import_id, segment_
                 task_logger.debug(f'spawn task for presynaptic segment_id {partner_segment_id}')
                 task = import_autoseg_skeleton_with_synapses.delay(pid, user_id,
                         import_id, partner_segment_id, False,
-                        with_autapses=with_autapses, set_status=False)
+                        with_autapses=with_autapses, set_status=False,
+                        annotations=annotations, tags=tags)
 
         n_downstream_partners = 0
         if fetch_downstream:
@@ -347,7 +351,8 @@ def import_upstream_downstream_partners(project_id, user_id, import_id, segment_
                 task_logger.debug(f'spawn task for postsynaptic segment_id {partner_segment_id}')
                 task = import_autoseg_skeleton_with_synapses.delay(pid, user_id,
                         import_id, partner_segment_id, False,
-                        with_autapses=with_autapses, set_status=False)
+                        with_autapses=with_autapses, set_status=False,
+                        annotations=annotations, tags=tags)
 
         if message_user:
             payload = {
@@ -416,7 +421,7 @@ def import_upstream_downstream_partners(project_id, user_id, import_id, segment_
 def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
         distance_threshold, active_skeleton_id, autoseg_segment_id = None,
         message_user=True, message_payload=None, with_autapses=False,
-        set_status=True):
+        set_status=True, annotations=None, tags=None):
     """Find and import all synapses for the existing skeleton. If status is
     provided.
     """
@@ -442,7 +447,7 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
             ''', (int(active_skeleton_id), int(project_id)))
 
         # convert record to pandas data frame
-        skeleton = pd.DataFrame.from_records(cursor.fetchall(), 
+        skeleton = pd.DataFrame.from_records(cursor.fetchall(),
             columns=['id', 'parent_id', 'x', 'y', 'z'])
 
         task_logger.debug(f'skeleton shape {len(skeleton)}')
@@ -472,7 +477,7 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
             if hasattr(settings, 'CIRCUITMAP_IGNORED_SEGMENT_IDS'):
                 overlapping_segmentids = overlapping_segmentids - set(settings.CIRCUITMAP_IGNORED_SEGMENT_IDS)
                 task_logger.debug(f'Removed segments with the following IDs: {settings.CIRCUITMAP_IGNORED_SEGMENT_IDS}')
-        
+
         # store skeleton in kdtree for fast distance computations
         tree = sp.KDTree( skeleton[['x', 'y', 'z']] )
         task_logger.debug('KD tree built for skeleton')
@@ -489,7 +494,7 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
             task_logger.debug(f'process segment: {segment_id}')
             all_pre_links.append(get_links(cur, segment_id, 'segmentid_pre'))
             all_post_links.append(get_links(cur, segment_id, 'segmentid_post'))
-            
+
         all_pre_links_concat = pd.concat(all_pre_links)
         all_post_links_concat = pd.concat(all_post_links)
 
@@ -516,13 +521,13 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
 
         # Faciltate autapse checking
         seen_skeleton_connectors_links = set()
-          
+
         if len(all_pre_links_concat) > 0:
             task_logger.debug('find closest distances to skeleton for pre')
             res = tree.query(all_pre_links_concat[['pre_x','pre_y', 'pre_z']])
             all_pre_links_concat['dist2'] = res[0]
             all_pre_links_concat['skeleton_node_id_index'] = res[1]
-            
+
             for idx, r in all_pre_links_concat.iterrows():
                 # skip link if beyond distance threshold
                 if distance_threshold >= 0 and r['dist2'] > distance_threshold:
@@ -536,13 +541,13 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
                 # if representative presynaptic location found, use it
                 if r['clust_con_offset'] > 0 and not all_pre_links_concat_remap_connector is None:
                     l = all_pre_links_concat_remap_connector.loc[r['clust_con_offset']]
-                    connector_id = CONNECTORID_OFFSET + int(r['clust_con_offset']) * 10 
+                    connector_id = CONNECTORID_OFFSET + int(r['clust_con_offset']) * 10
                     task_logger.debug('found representative connector (prelink) {} for skid {}'.format(connector_id, skid))
                     if not connector_id in connectors:
                         connectors[connector_id] = l.to_dict()
                 else:
                     # otherwise, use presynaptic location of link instead
-                    connector_id = CONNECTORID_OFFSET + int(r['offset']) * 10 
+                    connector_id = CONNECTORID_OFFSET + int(r['offset']) * 10
                     if not connector_id in connectors:
                         connectors[connector_id] = r.to_dict()
 
@@ -559,7 +564,7 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
             res = tree.query(all_post_links_concat[['post_x','post_y', 'post_z']])
             all_post_links_concat['dist2'] = res[0]
             all_post_links_concat['skeleton_node_id_index'] = res[1]
-                
+
             for idx, r in all_post_links_concat.iterrows():
                 # skip link if beyond distance threshold
                 if distance_threshold >= 0 and r['dist2'] > distance_threshold:
@@ -573,12 +578,12 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
                 # if representative presynaptic location found, use it
                 if r['clust_con_offset'] > 0 and not all_post_links_concat_remap_connector is None:
                     l = all_post_links_concat_remap_connector.loc[r['clust_con_offset']]
-                    connector_id = CONNECTORID_OFFSET + int(r['clust_con_offset']) * 10 
+                    connector_id = CONNECTORID_OFFSET + int(r['clust_con_offset']) * 10
                     task_logger.debug('found representative connector (postlink) {} for skid {}'.format(connector_id, skid))
                     if not connector_id in connectors:
                         connectors[connector_id] = l.to_dict()
                 else:
-                    connector_id = CONNECTORID_OFFSET + int(r['offset']) * 10 
+                    connector_id = CONNECTORID_OFFSET + int(r['offset']) * 10
                     if not connector_id in connectors:
                         connectors[connector_id] = r.to_dict()
                 # skip post links that form autapses
@@ -614,9 +619,9 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
                 DEFAULT_IMPORT_USER,
                 DEFAULT_IMPORT_USER,
                 project_id,
-                int(r['pre_x']), 
+                int(r['pre_x']),
                 int(r['pre_y']),
-                int(r['pre_z'])) 
+                int(r['pre_z']))
 
             if with_multi:
                 queries.append(q)
@@ -661,6 +666,50 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
             task_logger.debug(f'Inserting {len(queries)} synaptic links')
             cursor.execute('\n'.join(queries))
             task_logger.debug('multiquery done')
+
+        # add tags to connectors
+        if tags:
+            task_logger.debug('Add tags')
+            cursor.execute("""
+                WITH label_rel AS (
+                    SELECT id FROM relation
+                    WHERE relation_name = 'labeled_as'
+                    AND project_id = %(project_id)s
+                ), label_class AS (
+                    SELECT id FROM class
+                    WHERE class_name = 'label'
+                    AND project_id = %(project_id)s
+                ), insert_missing_labels AS (
+                    INSERT INTO class_instance (user_id, project_id, class_id, name)
+                    SELECT %(user_id)s, %(project_id)s, lc.id, label.name
+                    FROM label_class lc,
+                    UNNEST(%(label_names)s::text[]) label(name)
+                    LEFT JOIN LATERAL(
+                        SELECT id FROM class_instance ci
+                        WHERE ci.name = label.name
+                        AND ci.project_id = %(project_id)s
+                        AND ci.class_id = lc.id
+                    ) ci ON TRUE
+                    WHERE ci.id IS NULL
+                )
+                INSERT INTO connector_class_instance
+                    (user_id, project_id, relation_id, connector_id, class_instance_id)
+                SELECT %(user_id)s, %(project_id)s, lr.id, c.id, ci.id
+                FROM label_rel lr, label_class lc,
+                UNNEST(%(label_names)s::text[]) label(name)
+                JOIN LATERAL (
+                    SELECT id FROM class_instance ci
+                    WHERE ci.name = label.name
+                    AND ci.project_id = %(project_id)s
+                    AND ci.class_id = lc.id
+                ) ci ON TRUE
+                CROSS JOIN UNNEST(%(connector_ids)s::bigint[]) c(id)
+            """, {
+                'project_id': project_id,
+                'user_id': DEFAULT_IMPORT_USER,
+                'connector_ids': list(connectors.keys()),
+                'label_names': tags,
+            })
 
         if set_status:
             synapse_import.status = SynapseImport.Status.DONE
@@ -720,7 +769,7 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
 @task
 def import_autoseg_skeleton_with_synapses(project_id, user_id, import_id,
         segment_id, message_user=True, message_payload=None,
-        with_autapses=False, set_status=True):
+        with_autapses=False, set_status=True, annotations=None, tags=None):
 
     synapse_import = SynapseImport.objects.get(id=import_id)
     segment_import = synapse_import.segmentimport_set.all()
@@ -752,7 +801,7 @@ def import_autoseg_skeleton_with_synapses(project_id, user_id, import_id,
                 synapse_import.skeleton_id = skeleton_class_instance_id
                 synapse_import.save()
             task_logger.debug('autoseg skeleton was previously imported. skip reimport. (current skeletonid is {})'.format(skeleton_class_instance_id))
-        else:        
+        else:
             # fetch and insert autoseg skeleton at location
             task_logger.debug('fetch skeleton for segment_id {}'.format(segment_id))
 
@@ -762,12 +811,12 @@ def import_autoseg_skeleton_with_synapses(project_id, user_id, import_id,
             task_logger.debug('number of vertices {} for {}'.format(nr_of_vertices, segment_id))
 
             task_logger.debug('autoseg skeleton for {} has {} nodes'.format(segment_id, nr_of_vertices))
-            
+
             task_logger.debug('generate graph for skeleton')
             g=nx.Graph()
             attrs = []
             for idx in range(nr_of_vertices):
-                x,y,z=map(int,s1.vertices[idx,:]) 
+                x,y,z=map(int,s1.vertices[idx,:])
                 r = s1.radius[idx]
                 attrs.append((int(idx),{'x':x,'y':y,'z':z,'r':float(r) }))
             g.add_nodes_from(attrs)
@@ -800,7 +849,7 @@ def import_autoseg_skeleton_with_synapses(project_id, user_id, import_id,
             res = cursor.fetchall()
             classes = dict([(v,u) for u,v in res])
 
-            
+
             query = """
             INSERT INTO class_instance (user_id, project_id, class_id, name)
                         VALUES ({},{},{},'{}') RETURNING id;
@@ -896,12 +945,57 @@ def import_autoseg_skeleton_with_synapses(project_id, user_id, import_id,
             if with_multi:
                 cursor.execute('\n'.join(queries))
 
+            # add annotations to imported neurons
+            if annotations:
+                task_logger.debug('Add annotations')
+                cursor.execute("""
+                    WITH ann_rel AS (
+                        SELECT id FROM relation
+                        WHERE relation_name = 'annotated_with'
+                        AND project_id = %(project_id)s
+                    ), ann_class AS (
+                        SELECT id FROM class
+                        WHERE class_name = 'annotation'
+                        AND project_id = %(project_id)s
+                    ), insert_missing_annotations AS (
+                        INSERT INTO class_instance (user_id, project_id, class_id, name)
+                        SELECT %(user_id)s, %(project_id)s, ac.id, ann.name
+                        FROM ann_class ac,
+                        UNNEST(%(annotation_names)s::text[]) ann(name)
+                        LEFT JOIN LATERAL (
+                            SELECT id FROM class_instance ci
+                            WHERE ci.name = ann.name
+                            AND ci.class_id = ac.id
+                            AND ci.project_id = %(project_id)s
+                        ) ci ON TRUE
+                        WHERE ci.id IS NULL
+                    )
+                    INSERT INTO class_instance_class_instance
+                        (user_id, project_id, relation_id, class_instance_a, class_instance_b)
+                    SELECT %(user_id)s, %(project_id)s, ar.id, n.id, ci.id
+                    FROM ann_rel ar, ann_class ac,
+                    UNNEST(%(annotation_names)s::text[]) ann(name)
+                    JOIN LATERAL (
+                        SELECT id FROM class_instance ci
+                        WHERE ci.name = ann.name
+                        AND ci.project_id = %(project_id)s
+                        AND ci.class_id = ac.id
+                    ) ci ON TRUE
+                    CROSS JOIN UNNEST(%(neuron_ids)s::bigint[]) n(id)
+                """, {
+                    'project_id': project_id,
+                    'user_id': DEFAULT_IMPORT_USER,
+                    'neuron_ids': [neuron_class_instance_id],
+                    'annotation_names': annotations,
+                })
+
         # call import_synapses_for_existing_skeleton with autoseg skeleton as seed
         task_logger.debug('call task: import_synapses_for_existing_skeleton')
 
         import_synapses_for_existing_skeleton(project_id, user_id, import_id,
             -1,  skeleton_class_instance_id, segment_id, message_user,
-            message_payload, with_autapses, set_status=False)
+            message_payload, with_autapses, set_status=False,
+            annotations=annotations, tags=tags)
 
         task_logger.debug('task: import_autoseg_skeleton_with_synapses done')
 

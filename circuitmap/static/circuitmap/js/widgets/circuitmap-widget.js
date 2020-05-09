@@ -20,6 +20,11 @@
     this.content = undefined;
     this.autoSelectResultSkeleton = true;
     this.allowAutapses = false;
+    this.importAnnotations = CATMAID.TracingTool.getDefaultImportAnnotations();
+    this.importTags = CATMAID.TracingTool.getDefaultImportTags();
+
+    let config = CATMAID.extensionConfig['circuitmap']
+    this.sourceRemote = config ? config['seg_name'] : '';
 
     // The UI representation of past and current imports
     this.importTable = null;
@@ -43,6 +48,16 @@
         var tabs = CATMAID.DOM.addTabGroup(controls, this.widgetID,
             ['Main', activeSkeletonTab, locationTab]);
 
+        let getAnnotationTitle = () => {
+          let annotations = CATMAID.TracingTool.getEffectiveImportAnnotations(this.importAnnotations, this.sourceRemote);
+          return `A set of annotation terms, separated by comma, that will be added to import skeletons as annotations. Every occurence of "{group}" will be replaced with your primary group (or your username, should now primary group be defined). Every occurence of "{source}" will be replaced with the handle of the import source (e.g. the server name).\n\nCurrent set of annotations: ${annotations}`;
+        };
+
+        let getTagTitle = () => {
+          let tags = CATMAID.TracingTool.getEffectiveImportTags(this.importTags, this.sourceRemote);
+          return `A set of tags, separated by comma, that will be added to imported synapses (connector nodes) as tags. Every occurence of "{group}" will be replaced with your primary group (or your username, should now primary group be defined). Every occurence of "{source}" will be replaced with the handle of the import source (e.g. the server name).\n\nCurrent set of tags: ${tags}`;
+        };
+
         CATMAID.DOM.appendToTab(tabs['Main'], [
           {
             type: 'button',
@@ -50,6 +65,26 @@
             title: 'Reload the import table',
             onclick: e => {
               this.refresh();
+            }
+          },
+          {
+            type: 'text',
+            label: 'Import tags',
+            title: getTagTitle(),
+            value: this.importTags.join(', '),
+            length: 15,
+            onchange: e => {
+              this.importTags = e.target.value.split(',').map(v => v.trim());
+            }
+          },
+          {
+            type: 'text',
+            label: 'Import annotations',
+            title: getAnnotationTitle(),
+            value: this.importAnnotations.join(', '),
+            length: 15,
+            onchange: e => {
+              this.importAnnotations = e.target.value.split(',').map(v => v.trim());
             }
           },
           {
@@ -377,6 +412,10 @@
       'active_skeleton': activeSkeletonId,
       'request_id': this.sourceHash,
       'with_autapses': this.allowAutapses,
+      'annotations': CATMAID.TracingTool.getEffectiveImportAnnotations(
+          this.importAnnotations, this.sourceRemote),
+      'tags': CATMAID.TracingTool.getEffectiveImportTags(
+          this.importTags, this.sourceRemote),
     };
 
     this.updateMessage(`Fetching synapses for skeleton #${activeSkeletonId}`);
@@ -412,6 +451,10 @@
       'active_skeleton': -1,
       'request_id': this.sourceHash,
       'with_autapses': this.allowAutapses,
+      'annotations': CATMAID.TracingTool.getEffectiveImportAnnotations(
+          this.importAnnotations, this.sourceRemote),
+      'tags': CATMAID.TracingTool.getEffectiveImportTags(
+          this.importTags, this.sourceRemote),
     };
 
     this.updateMessage(`Fetching segment and synapses for stack location (${stackViewer.x}, ${stackViewer.y}, ${stackViewer.z})`);
