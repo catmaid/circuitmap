@@ -218,6 +218,16 @@ def fetch_synapses(request: HttpRequest, project_id=None):
         'request_id': request_id,
     }
 
+    # Create result entry (skeleton ID can be -1)
+    synapse_import = SynapseImport.objects.create(user=request.user,
+            project_id=pid, request_id=request_id,
+            skeleton_id=active_skeleton_id, status=SynapseImport.Status.QUEUED,
+            upstream_partner_syn_threshold=upstream_syn_count,
+            downsteam_partner_syn_threshold=downstream_syn_count,
+            distance_threshold=distance_threshold,
+            with_autapses=with_autapses, tags=tags,
+            annotations=annotations)
+
     status = dict()
     if active_skeleton_id == -1:
 
@@ -236,14 +246,6 @@ def fetch_synapses(request: HttpRequest, project_id=None):
         if segment_id is None or segment_id == 0:
             raise CircuitMapError(f"No segment found at stack location ({x}, {y}, {z})")
         else:
-            # Create result entry
-            synapse_import = SynapseImport.objects.create(user=request.user,
-                    project_id=pid, request_id=request_id,
-                    skeleton_id=-1, status=SynapseImport.Status.QUEUED,
-                    upstream_partner_syn_threshold=upstream_syn_count,
-                    downsteam_partner_syn_threshold=downstream_syn_count,
-                    distance_threshold=distance_threshold,
-                    with_autapses=with_autapses)
             segment_import = SegmentImport.objects.create(
                     synapse_import=synapse_import, segment_id=segment_id,
                     source=CLOUDVOLUME_URL,
@@ -262,16 +264,6 @@ def fetch_synapses(request: HttpRequest, project_id=None):
                 'import_ref': synapse_import.id
             })
     else:
-        # Create result entry
-        synapse_import = SynapseImport.objects.create(user=request.user,
-                project_id=pid, request_id=request_id,
-                skeleton_id=active_skeleton_id,
-                status=SynapseImport.Status.QUEUED,
-                upstream_partner_syn_threshold=upstream_syn_count,
-                downsteam_partner_syn_threshold=downstream_syn_count,
-                distance_threshold=distance_threshold,
-                with_autapses=with_autapses)
-
         # fetch synapses for manual skeleton
         import_synapses_for_existing_skeleton.delay(pid, request.user.id,
             synapse_import.id, distance_threshold, active_skeleton_id, None,
