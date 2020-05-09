@@ -406,16 +406,6 @@ def import_upstream_downstream_partners(project_id, user_id, import_id, segment_
         msg_user(user_id, 'circuitmap-update', payload)
 
 
-#Code like this might be needed for make it work with RabbitMQ:
-#@task()
-#def import_synapses_for_existing_skeleton(project_id, user_id, distance_threshold, active_skeleton_id,
-#        autoseg_segment_id = None, message_user=True, message_payload=None):
-#    asyncio.run(import_synapses_for_existing_skeleton(project_id, user_id,
-#            distance_threshold, active_skeleton_id, autoseg_segment_id,
-#            message_user, message_payload))
-#
-#async def _import_synapses_for_existing_skeleton(project_id, user_id, distance_threshold, active_skeleton_id,
-
 @task()
 def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
         distance_threshold, active_skeleton_id, autoseg_segment_id = None,
@@ -423,6 +413,19 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
         set_status=True, annotations=None, tags=None):
     """Find and import all synapses for the existing skeleton. If status is
     provided.
+
+    Code like this might be needed for make tasks that use asyncio (websockets
+    messages) work with RabbitMQ:
+
+    @task()
+    def import_synapses_for_existing_skeleton(project_id, user_id, distance_threshold, active_skeleton_id,
+            autoseg_segment_id = None, message_user=True, message_payload=None):
+        asyncio.run(import_synapses_for_existing_skeleton(project_id, user_id,
+                distance_threshold, active_skeleton_id, autoseg_segment_id,
+                message_user, message_payload))
+
+    async def _import_synapses_for_existing_skeleton(…):
+        …
     """
     task_logger.debug('task: import_synapses_for_existing_skeleton started')
     error = None
