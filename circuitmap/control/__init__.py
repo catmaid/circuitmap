@@ -221,7 +221,6 @@ def fetch_synapses(request: HttpRequest, project_id=None):
     status = dict()
     if active_skeleton_id == -1:
 
-        msg_payload['task'] = 'import-location'
         msg_payload['x'], msg_payload['y'], msg_payload['z'] = x, y, z
 
         voxel_x, voxel_y, voxel_z = x//2, y//2, z
@@ -292,7 +291,7 @@ def import_synapses_and_segment(project_id, user_id, import_id, segment_id,
 
     start_time = timer()
 
-    message_payload['task'] = 'import-location-partners'
+    message_payload['task'] = 'import-location'
     task_logger.debug('task: import_synapses_and_segment')
     task_logger.debug('call: import_autoseg_skeleton_with_synapses')
     seg_import_task = import_autoseg_skeleton_with_synapses(project_id,
