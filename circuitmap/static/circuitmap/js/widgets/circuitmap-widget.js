@@ -303,12 +303,18 @@
               class: "cm-center",
               searchable: true,
               orderable: true,
+              render: function(data, type, row, meta) {
+                return data < 0 ? '-' : data;
+              },
             }, {
               data: "downsteam_partner_syn_threshold",
               title: "Down. syn thrsh.",
               class: "cm-center",
               searchable: true,
               orderable: true,
+              render: function(data, type, row, meta) {
+                return data < 0 ? '-' : data;
+              },
             }, {
               data: "distance_threshold",
               title: "Dist. thrsh..",
