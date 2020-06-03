@@ -539,6 +539,9 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
                     task_logger.debug('found representative connector (prelink) {} for skid {}'.format(connector_id, skid))
                     if not connector_id in connectors:
                         connectors[connector_id] = l.to_dict()
+                    dist2, sk_id_index = tree.query(r[['pre_x', 'pre_y', 'pre_z']])
+                    skid = int(skeleton.loc[int(sk_id_index)]['id'])
+
                 else:
                     # otherwise, use presynaptic location of link instead
                     connector_id = CONNECTORID_OFFSET + int(r['offset']) * 10
