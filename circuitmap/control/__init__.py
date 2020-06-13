@@ -45,23 +45,24 @@ cols = ["id", "pre_x","pre_y","pre_z","post_x","post_y","post_z","scores",
 task_logger = get_task_logger(__name__)
 
 
-def get_links(cursor, segment_id, where='segmentid_pre', table='circuitmap_synlinks'):
-    #print('execute')
-    query = 'SELECT * from {} where {} = {};'.format(table, where, segment_id)
-    cursor.execute(query)
-    #print('fetch all')
-    pre_links = cursor.fetchall()
-    #print('fetch from db done')
-    return pd.DataFrame.from_records(pre_links, columns=cols)
+def get_links(cursor, segment_id, where='segmentid_pre'):
+    cursor.execute(f'''
+        SELECT * FROM circuitmap_synlinks
+        WHERE {where} = %(segment_id)s
+    ''', {
+        'segment_id': segment_id,
+    })
+    return pd.DataFrame.from_records(cursor.fetchall(), columns=cols)
 
 
-def get_links_from_offset(cursor, offsets, table='circuitmap_synlinks'):
-    #print('execute')
-    cursor.execute('SELECT * from {} where "offset" in ({});'.format(table, ','.join(map(str,offsets))))
-    #print('fetch all')
-    pre_links = cursor.fetchall()
-    #print('fetch from db done')
-    return pd.DataFrame.from_records(pre_links, columns=cols)
+def get_links_from_offset(cursor, offsets):
+    cursor.execute(f'''
+        SELECT * FROM circuitmap_synlinks
+        WHERE offset = ANY(%(offsets)s::int[])
+    ''', {
+        'offsets': offsets,
+    })
+    return pd.DataFrame.from_records(cursor.fetchall(), columns=cols)
 
 
 def load_subgraph(cursor, start_segment_id, order = 0):
