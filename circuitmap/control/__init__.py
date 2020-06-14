@@ -63,8 +63,8 @@ def get_links(cursor, segment_id, where='segmentid_pre'):
 
 def get_links_from_offset(cursor, offsets):
     cursor.execute(f'''
-        SELECT * FROM circuitmap_synlinks
-        WHERE offset = ANY(%(offsets)s::int[])
+        SELECT * FROM circuitmap_synlinks csl
+        WHERE csl.offset = ANY(%(offsets)s::int[])
     ''', {
         'offsets': offsets,
     })
