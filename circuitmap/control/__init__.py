@@ -32,6 +32,11 @@ from catmaid.models import Message, User, UserRole
 from catmaid.control.message import notify_user
 from catmaid.control.authentication import requires_user_role
 
+# Make psycopg2 understand numpy 64 bit types
+import psycopg2
+psycopg2.extensions.register_adapter(np.int64, psycopg2._psycopg.AsIs)
+psycopg2.extensions.register_adapter(np.uint64, psycopg2._psycopg.AsIs)
+
 cv = CloudVolume(CLOUDVOLUME_URL, use_https=True, parallel=False)
 cv.meta.info['skeletons'] = CLOUDVOLUME_SKELETONS
 cv.skeleton.meta.refresh_info()
