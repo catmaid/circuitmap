@@ -527,8 +527,8 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
                 # skip link if beyond distance threshold
                 if distance_threshold >= 0 and r['dist2'] > distance_threshold:
                     continue
-                if r['segmentid_pre'] == r['segmentid_post']:
-                    # skip selflinks
+                # skip selflinks, if no autapses are wanted
+                if not with_autapses and r['segmentid_pre'] == r['segmentid_post']:
                     continue
 
                 skid = int(skeleton.loc[r['skeleton_node_id_index']]['id'])
