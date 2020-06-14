@@ -14,6 +14,7 @@ import networkx as nx
 import sqlite3
 import logging
 from timeit import default_timer as timer
+from itertools import chain
 
 from cloudvolume import CloudVolume
 from cloudvolume.datasource.precomputed.skeleton.sharded import ShardedPrecomputedSkeletonSource
@@ -434,51 +435,52 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
     synapse_import = None
     try:
         # Set status to computing
+        task_logger.debug(f'SI ID: {import_id}')
         synapse_import = SynapseImport.objects.get(id=import_id)
         synapse_import.status = SynapseImport.Status.COMPUTING
         synapse_import.save()
 
-        # retrieve skeleton with all nodes directly from the database
+        # Retrieve skeleton with all nodes directly from the database
         cursor = connection.cursor()
         cursor.execute('''
             SELECT t.id, t.parent_id, t.location_x, t.location_y, t.location_z
             FROM treenode t
-            WHERE t.skeleton_id = %s AND t.project_id = %s
-            ''', (int(active_skeleton_id), int(project_id)))
+            WHERE t.skeleton_id = %(skeleton_id)s
+            AND t.project_id = %(project_id)s
+        ''', {
+            'project_id': int(project_id),
+            'skeleton_id': int(active_skeleton_id),
+        })
 
         # convert record to pandas data frame
         skeleton = pd.DataFrame.from_records(cursor.fetchall(),
             columns=['id', 'parent_id', 'x', 'y', 'z'])
-
-        task_logger.debug(f'skeleton shape {len(skeleton)}')
+        task_logger.debug(f'Skeleton {active_skeleton_id} has {len(skeleton)} nodes')
 
         # accessing the most recent autoseg data
         fafbseg.use_google_storage(GOOGLE_SEGMENTATION_STORAGE)
         task_logger.debug(f'Using google storage {GOOGLE_SEGMENTATION_STORAGE}')
 
-        if not autoseg_segment_id is None:
-            task_logger.debug('active skeleton {} is derived from segment id {}'.format(active_skeleton_id, autoseg_segment_id))
+        if autoseg_segment_id is not None:
+            task_logger.debug('Active skeleton {} is derived from segment id {}'.format(active_skeleton_id, autoseg_segment_id))
             overlapping_segmentids = set([int(autoseg_segment_id)])
         else:
             # retrieve segment ids
-            task_logger.debug('getting autoseg segments')
+            task_logger.debug('Getting autoseg segments')
             segment_ids = fafbseg.segmentation.get_seg_ids(skeleton[['x','y','z']])
 
-            task_logger.debug(f'found segment ids for skeleton: {segment_ids}')
+            task_logger.debug(f'Found segment IDs for skeleton: {segment_ids}')
 
-            overlapping_segmentids = set()
-            for seglist in segment_ids:
-                for s in seglist:
-                    overlapping_segmentids.add(s)
+            overlapping_segmentids = set(chain.from_iterable(segment_ids))
             task_logger.debug(f'found {len(overlapping_segmentids)} overlapping segments')
 
-            # Debug: explicitly remove segments with ID=0, because there seem
-            # to be problems with the data.
+            # Explicitly remove segments with IDs marked as ignored (e.g.
+            # background).
             if hasattr(settings, 'CIRCUITMAP_IGNORED_SEGMENT_IDS'):
                 overlapping_segmentids = overlapping_segmentids - set(settings.CIRCUITMAP_IGNORED_SEGMENT_IDS)
                 task_logger.debug(f'Removed segments with the following IDs: {settings.CIRCUITMAP_IGNORED_SEGMENT_IDS}')
 
-        # store skeleton in kdtree for fast distance computations
+        # Store skeleton in KD-tree for fast distance lookups
         tree = sp.KDTree( skeleton[['x', 'y', 'z']] )
         task_logger.debug('KD tree built for skeleton')
 
@@ -489,17 +491,17 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
 
         # retrieve synaptic links for each autoseg skeleton
         # todo: list shouldn't be needed
-        task_logger.debug('iterating overlapping segments')
+        task_logger.debug('Iterating overlapping segments')
         for segment_id in overlapping_segmentids:
-            task_logger.debug(f'process segment: {segment_id}')
+            task_logger.debug(f'Process segment: {segment_id}')
             all_pre_links.append(get_links(cur, segment_id, 'segmentid_pre'))
             all_post_links.append(get_links(cur, segment_id, 'segmentid_post'))
 
         all_pre_links_concat = pd.concat(all_pre_links)
         all_post_links_concat = pd.concat(all_post_links)
 
-        task_logger.debug(f'total nr prelinks collected: {len(all_pre_links_concat)}')
-        task_logger.debug(f'total nr postlinks collected: {len(all_post_links_concat)}')
+        task_logger.debug(f'Total nr prelinks collected: {len(all_pre_links_concat)}')
+        task_logger.debug(f'Total nr postlinks collected: {len(all_post_links_concat)}')
 
         # for all pre/post links, if clust_con_offset > 0, retrieve the respective
         # links and use the presynaptic location as representative location for the link
@@ -507,27 +509,26 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
         if len(tmp_list) == 0:
             all_pre_links_concat_remap_connector = None
         else:
-            all_pre_links_concat_remap_connector = get_links_from_offset(cursor, tmp_list)
-            all_pre_links_concat_remap_connector = all_pre_links_concat_remap_connector.set_index('offset')
-            task_logger.debug(f'total nr representative prelinks collected: {len(all_pre_links_concat_remap_connector)}')
+            all_pre_links_concat_remap_connector = get_links_from_offset(cursor, tmp_list).set_index('offset')
+            task_logger.debug(f'Total # representative prelinks collected: {len(all_pre_links_concat_remap_connector)}')
 
         tmp_list = all_post_links_concat[all_post_links_concat['clust_con_offset']>0]['clust_con_offset'].tolist()
         if len(tmp_list) == 0:
             all_post_links_concat_remap_connector = None
         else:
-            all_post_links_concat_remap_connector = get_links_from_offset(cursor, tmp_list)
-            all_post_links_concat_remap_connector = all_post_links_concat_remap_connector.set_index('offset')
-            task_logger.debug(f'total nr representative postlinks collected: {len(all_post_links_concat_remap_connector)}')
+            all_post_links_concat_remap_connector = get_links_from_offset(cursor, tmp_list).set_index('offset')
+            task_logger.debug(f'Total # representative postlinks collected: {len(all_post_links_concat_remap_connector)}')
 
         # Faciltate autapse checking
         seen_skeleton_connectors_links = set()
 
         if len(all_pre_links_concat) > 0:
-            task_logger.debug('find closest distances to skeleton for pre')
+            task_logger.debug('Find closest distances to skeleton for pre')
             res = tree.query(all_pre_links_concat[['pre_x','pre_y', 'pre_z']])
             all_pre_links_concat['dist2'] = res[0]
             all_pre_links_concat['skeleton_node_id_index'] = res[1]
 
+           # Iterate over all presynaptic links found for the current skeleton.
             for idx, r in all_pre_links_concat.iterrows():
                 # skip link if beyond distance threshold
                 if distance_threshold >= 0 and r['dist2'] > distance_threshold:
