@@ -531,13 +531,13 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
                 if not with_autapses and r['segmentid_pre'] == r['segmentid_post']:
                     continue
 
-                skid = int(skeleton.loc[r['skeleton_node_id_index']]['id'])
+                treenode_id = int(skeleton.loc[r['skeleton_node_id_index']]['id'])
 
                 # if representative presynaptic location found, use it
                 if r['clust_con_offset'] > 0 and not all_pre_links_concat_remap_connector is None:
                     l = all_pre_links_concat_remap_connector.loc[r['clust_con_offset']]
                     connector_id = CONNECTORID_OFFSET + int(r['clust_con_offset']) * 10
-                    task_logger.debug('found representative connector (prelink) {} for skid {}'.format(connector_id, skid))
+                    task_logger.debug('found representative connector (prelink) {} for treenode {}'.format(connector_id, treenode_id))
                     if not connector_id in connectors:
                         connectors[connector_id] = l.to_dict()
                 else:
@@ -548,7 +548,7 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
 
                 # add treenode_connector link
                 treenode_connector[ \
-                    (skid, connector_id)] = {'type': 'presynaptic_to'}
+                    (treenode_id, connector_id)] = {'type': 'presynaptic_to'}
 
                 # remember skeleton link
                 if not with_autapses:
@@ -568,13 +568,13 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
                     # skip selflinks
                     continue
 
-                skid = int(skeleton.loc[r['skeleton_node_id_index']]['id'])
+                treenode_id = int(skeleton.loc[r['skeleton_node_id_index']]['id'])
 
                 # if representative presynaptic location found, use it
                 if r['clust_con_offset'] > 0 and not all_post_links_concat_remap_connector is None:
                     l = all_post_links_concat_remap_connector.loc[r['clust_con_offset']]
                     connector_id = CONNECTORID_OFFSET + int(r['clust_con_offset']) * 10
-                    task_logger.debug('found representative connector (postlink) {} for skid {}'.format(connector_id, skid))
+                    task_logger.debug('found representative connector (postlink) {} for treenode {}'.format(connector_id, treenode_id))
                     if not connector_id in connectors:
                         connectors[connector_id] = l.to_dict()
                 else:
@@ -587,7 +587,7 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
                     continue
                 # add treenode_connector link
                 treenode_connector[ \
-                    (skid, connector_id)] = {'type': 'postsynaptic_to'}
+                    (treenode_id, connector_id)] = {'type': 'postsynaptic_to'}
 
         # insert into database
         task_logger.debug('fetch relations')
