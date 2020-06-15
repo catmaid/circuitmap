@@ -192,6 +192,7 @@
 
         $(controls).tabs();
       },
+      class: 'circuitmap',
       contentID: this.idPrefix + 'content',
       createContent: function(container) {
         this.content = container;
@@ -207,7 +208,7 @@
 
         let importTable = container.appendChild(document.createElement('table'));
         this.importTable = $(importTable).DataTable({
-          dom: "lrphtip",
+          dom: '<"user-select">lrphtip',
           paging: true,
           order: [[0, 'desc']],
           autoWidth: false,
@@ -343,6 +344,36 @@
           language: {
             emptyTable: 'No imports found',
           },
+        }).on('init.dt', e => {
+          let userSelectWrappers = this.content.querySelectorAll('.user-select');
+          if (userSelectWrappers.length == 0) return;
+          let userSelectWrapper = userSelectWrappers[userSelectWrappers.length - 1];
+
+          // Set default filter: current user
+          this.importTable.column(1).search(CATMAID.session.username).draw();
+
+          // Inject user selection
+          let userSelectLabel = userSelectWrapper.appendChild(document.createElement('label'));
+          userSelectLabel.appendChild(document.createTextNode('User '));
+          let userSelectSelect = document.createElement('select');
+
+          let users = Object.values(CATMAID.User.all()).map(u => {
+            return {
+              title: `${u.fullName} (${u.login})`,
+              value: u.login,
+            };
+          });
+          let entries = [...[{
+            title: 'All users',
+            value: '',
+          }], ...users];
+          let userSelect = CATMAID.DOM.createRadioSelect("User", entries,
+              CATMAID.session.username, true, 'selected');
+          userSelectWrapper.appendChild(userSelect);
+          userSelect.addEventListener('change', e => {
+            // Set table filters
+            this.importTable.column(1).search(e.target.value).draw();
+          });
         }).on('click', 'a[data-role=select-skeleton]', e => {
           let data = this.importTable.row($(e.target).parents('tr')).data();
           if (data.skeleton_id === -1) {

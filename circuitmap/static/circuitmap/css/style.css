@@ -1,8 +1,13 @@
-.status {
+.circuitmap .status {
   color: #999;
   margin-bottom: 0.4em;
 }
 
-.status-label {
+.circuitmap .status-label {
   margin-right: 0.5em;
+}
+
+.circuitmap .user-select {
+  padding-right: 0.5em;
+  float: left;
 }
