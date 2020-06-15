@@ -6,6 +6,7 @@ from django.http import HttpRequest, JsonResponse, HttpResponse
 from django.db import connection, transaction
 from django.utils.decorators import method_decorator
 
+import traceback
 import numpy as np
 import pandas as pd
 import scipy.spatial as sp
@@ -728,8 +729,9 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
         synapse_import.save()
         task_logger.debug('task: import_synapses_for_existing_skeleton started: done')
     except Exception as ex:
+        error_message = traceback.format_exc()
+        task_logger.error(f'Exception occurred: {error_message}')
         error = ex
-        task_logger.error(f'Exception occurred: {ex}')
         if synapse_import:
             duration = timer() - start_time
             synapse_import.runtime = duration
