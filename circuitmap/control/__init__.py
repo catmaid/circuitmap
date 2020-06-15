@@ -234,7 +234,7 @@ def fetch_synapses(request: HttpRequest, project_id=None):
 
         msg_payload['x'], msg_payload['y'], msg_payload['z'] = x, y, z
 
-        voxel_x, voxel_y, voxel_z = x//2, y//2, z
+        voxel_x, voxel_y, voxel_z = x, y, z
 
         # look up segment id at location and fetch synapses
         try:
@@ -330,7 +330,7 @@ def import_upstream_downstream_partners(project_id, user_id, import_id, segment_
             n_upstream_partners = len(upstream_partners)
             for partner_segment_id in upstream_partners:
                 task_logger.debug(f'spawn task for presynaptic segment_id {partner_segment_id}')
-                task = import_autoseg_skeleton_with_synapses.delay(pid, user_id,
+                task = import_autoseg_skeleton_with_synapses.delay(project_id, user_id,
                         import_id, partner_segment_id, False,
                         with_autapses=with_autapses, set_status=False,
                         annotations=annotations, tags=tags)
@@ -341,7 +341,7 @@ def import_upstream_downstream_partners(project_id, user_id, import_id, segment_
             n_downstream_partners = len(downstream_partners)
             for partner_segment_id in downstream_partners:
                 task_logger.debug(f'spawn task for postsynaptic segment_id {partner_segment_id}')
-                task = import_autoseg_skeleton_with_synapses.delay(pid, user_id,
+                task = import_autoseg_skeleton_with_synapses.delay(project_id, user_id,
                         import_id, partner_segment_id, False,
                         with_autapses=with_autapses, set_status=False,
                         annotations=annotations, tags=tags)
