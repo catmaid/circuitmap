@@ -197,6 +197,14 @@
         this.content = container;
         this.updateMessage();
 
+        let statusWrapper = container.appendChild(document.createElement('div'));
+        statusWrapper.classList.add('status');
+        let statusLabel = statusWrapper.appendChild(document.createElement('span'));
+        statusLabel.classList.add('status-label');
+        statusLabel.appendChild(document.createTextNode('Status:'))
+        let statusLine = statusWrapper.appendChild(document.createElement('span'));
+        statusLine.classList.add('status-line');
+
         let importTable = container.appendChild(document.createElement('table'));
         this.importTable = $(importTable).DataTable({
           dom: "lrphtip",
@@ -367,6 +375,7 @@
           self.downstream_syn_count = this.value;
         });
 
+        this.updateMessage();
       },
       helpPath: 'circuit-map.html',
     };
@@ -379,22 +388,28 @@
     if (newMsg !== undefined) {
       this.msg = newMsg;
     }
+    let msg;
     if (this.msg) {
-      this.content.dataset.msg = this.msg;
+      msg = this.msg;
     } else {
       let atn = SkeletonAnnotations.getActiveNodeId();
       if (atn) {
         let atnType = SkeletonAnnotations.getActiveNodeType();
         if (atnType === SkeletonAnnotations.TYPE_NODE) {
           let skeletonId = SkeletonAnnotations.getActiveSkeletonId();
-          this.content.dataset.msg = `Fetch all synapses for the active skeleton with ID #${skeletonId} or find a segmentation fragment plus its synapses for the current location using the respective tab above.`;
+          msg = `Fetch all synapses for the active skeleton with ID #${skeletonId} or find a segmentation fragment plus its synapses for the current location using the respective tab above.`;
         } else {
-          this.content.dataset.msg = "Please select the active skeleton tab or the location tab to import synapses.";
+          msg = "Please select the active skeleton tab or the location tab to import synapses.";
         }
       } else {
-          this.content.dataset.msg = "Please select a skeleton and use the active skeleton tab or use the location tab to import synapses.";
+        msg = "Please select a skeleton and use the active skeleton tab or use the location tab to import synapses.";
       }
     }
+
+    let statusLine = this.content.querySelector('.status-line');
+    if (!statusLine) return;
+    while (statusLine.lastChild) statusLine.removeChild(statusLine.lastChild);
+    statusLine.appendChild(document.createTextNode(msg));
   };
 
   CircuitmapWidget.prototype.handleActiveNodeChange = function() {
