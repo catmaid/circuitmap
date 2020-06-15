@@ -536,7 +536,10 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
             all_pre_links_concat['dist2'] = res[0]
             all_pre_links_concat['skeleton_node_id_index'] = res[1]
 
-           # Iterate over all presynaptic links found for the current skeleton.
+            seen_treenode_links = set()
+            seen_connector_links = dict()
+
+            # Iterate over all presynaptic links found for the current skeleton.
             for idx, r in all_pre_links_concat.iterrows():
                 # skip link if beyond distance threshold
                 if distance_threshold >= 0 and r['dist2'] > distance_threshold:
@@ -544,6 +547,11 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
                 # skip selflinks, if no autapses are wanted
                 if not with_autapses and r['segmentid_pre'] == r['segmentid_post']:
                     continue
+                # Prevent duplicates treenode references in pre-segment
+                link_id = (r['segmentid_pre'], r['skeleton_node_id_index'])
+                if link_id in seen_treenode_links:
+                    continue
+                seen_treenode_links.add(link_id)
 
                 treenode_id = int(skeleton.loc[r['skeleton_node_id_index']]['id'])
 
@@ -560,13 +568,21 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
                     if not connector_id in connectors:
                         connectors[connector_id] = r.to_dict()
 
-                # add treenode_connector link
-                treenode_connector[ \
-                    (treenode_id, connector_id)] = {'type': 'presynaptic_to'}
+                # Prevent duplicate links from pre-fragment to selected
+                # connector.
+                connector_link_id = (r['segmentid_pre'], connector_id)
+                existing_link_data = seen_connector_links.get(connector_link_id)
+                if existing_link_data is None or existing_link_data[2] > r['dist2']:
+                    seen_connector_links[connector_link_id] = (treenode_id, connector_id, r['dist2'])
 
                 # remember skeleton link
                 if not with_autapses:
                     seen_skeleton_connectors_links.add((active_skeleton_id, connector_id))
+
+            # Mark all final pre link sites to be stored in the database
+            for treenode_id, connector_id, _ in seen_connector_links.values():
+                task_logger.debug(f'Marking link from treenode {treenode_id} to connector {connector_id} for import')
+                treenode_connector[(treenode_id, connector_id)] = {'type': 'presynaptic_to'}
 
         if len(all_post_links_concat) > 0:
             task_logger.debug('find closest distances to skeleton for post')
