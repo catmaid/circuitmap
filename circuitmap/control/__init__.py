@@ -590,6 +590,9 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
             all_post_links_concat['dist2'] = res[0]
             all_post_links_concat['skeleton_node_id_index'] = res[1]
 
+            seen_treenode_links = set()
+            seen_connector_links = dict()
+
             for idx, r in all_post_links_concat.iterrows():
                 # skip link if beyond distance threshold
                 if distance_threshold >= 0 and r['dist2'] > distance_threshold:
@@ -597,6 +600,11 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
                 if r['segmentid_pre'] == r['segmentid_post']:
                     # skip selflinks
                     continue
+                # Prevent duplicates treenode references in pre-segment
+                link_id = (r['segmentid_post'], r['skeleton_node_id_index'])
+                if link_id in seen_treenode_links:
+                    continue
+                seen_treenode_links.add(link_id)
 
                 treenode_id = int(skeleton.loc[r['skeleton_node_id_index']]['id'])
 
@@ -615,9 +623,17 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
                 if (active_skeleton_id, connector_id) in seen_skeleton_connectors_links:
                     task_logger.debug(f'skipping autapse: {active_skeleton_id}, {connector_id}')
                     continue
-                # add treenode_connector link
-                treenode_connector[ \
-                    (treenode_id, connector_id)] = {'type': 'postsynaptic_to'}
+
+                # Prevent duplicate links from selected connector to post-fragment
+                connector_link_id = (r['segmentid_post'], connector_id)
+                existing_link_data = seen_connector_links.get(connector_link_id)
+                if existing_link_data is None or existing_link_data[2] > r['dist2']:
+                    seen_connector_links[connector_link_id] = (treenode_id, connector_id, r['dist2'])
+
+            # Mark all final post link sites to be stored in the database
+            for treenode_id, connector_id, _ in seen_connector_links.values():
+                task_logger.debug(f'Marking link from connector {connector_id} to treenode {treenode_id} for import')
+                treenode_connector[(treenode_id, connector_id)] = {'type': 'postsynaptic_to'}
 
         # insert into database
         task_logger.debug('fetch relations')
