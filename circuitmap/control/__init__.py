@@ -3,7 +3,7 @@
 from rest_framework.decorators import api_view
 from rest_framework.views import APIView
 from django.http import HttpRequest, JsonResponse, HttpResponse
-from django.db import connection
+from django.db import connection, transaction
 from django.utils.decorators import method_decorator
 
 import numpy as np
@@ -199,6 +199,7 @@ def testtask():
 
 
 @api_view(['POST'])
+@transaction.non_atomic_requests
 def fetch_synapses(request: HttpRequest, project_id=None):
     x = int(round(float(request.POST.get('x', -1))))
     y = int(round(float(request.POST.get('y', -1))))
@@ -225,15 +226,18 @@ def fetch_synapses(request: HttpRequest, project_id=None):
         'request_id': request_id,
     }
 
-    # Create result entry (skeleton ID can be -1)
-    synapse_import = SynapseImport.objects.create(user=request.user,
-            project_id=pid, request_id=request_id,
-            skeleton_id=active_skeleton_id, status=SynapseImport.Status.QUEUED,
-            upstream_partner_syn_threshold=upstream_syn_count,
-            downsteam_partner_syn_threshold=downstream_syn_count,
-            distance_threshold=distance_threshold,
-            with_autapses=with_autapses, tags=tags,
-            annotations=annotations)
+    # Create result entry (skeleton ID can be -1). We need to make sure the
+    # SynapseImport model object is committed # to the DB, before we call the
+    # async task that uses it.
+    with transaction.atomic():
+        synapse_import = SynapseImport.objects.create(user=request.user,
+                project_id=pid, request_id=request_id,
+                skeleton_id=active_skeleton_id, status=SynapseImport.Status.QUEUED,
+                upstream_partner_syn_threshold=upstream_syn_count,
+                downsteam_partner_syn_threshold=downstream_syn_count,
+                distance_threshold=distance_threshold,
+                with_autapses=with_autapses, tags=tags,
+                annotations=annotations)
 
     status = dict()
     if active_skeleton_id == -1:
@@ -253,11 +257,14 @@ def fetch_synapses(request: HttpRequest, project_id=None):
         if segment_id is None or segment_id == 0:
             raise CircuitMapError(f"No segment found at stack location ({x}, {y}, {z})")
         else:
-            segment_import = SegmentImport.objects.create(
-                    synapse_import=synapse_import, segment_id=segment_id,
-                    source=CLOUDVOLUME_URL,
-                    voxel_x=voxel_x, voxel_y=voxel_y, voxel_z=voxel_z,
-                    physical_x=x, physical_y=y, physical_z=z)
+            # We need to make sure the SynapseImport model object is committed
+            # to the DB, before we call the async task that uses it.
+            with transaction.atomic():
+                segment_import = SegmentImport.objects.create(
+                        synapse_import=synapse_import, segment_id=segment_id,
+                        source=CLOUDVOLUME_URL,
+                        voxel_x=voxel_x, voxel_y=voxel_y, voxel_z=voxel_z,
+                        physical_x=x, physical_y=y, physical_z=z)
 
             import_synapses_and_segment.delay(pid, request.user.id,
                     synapse_import.id, segment_id, fetch_upstream,
