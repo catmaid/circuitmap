@@ -47,7 +47,7 @@
         let activeSkeletonTab = 'Synapses for active skeleton';
         let locationTab = 'Synapses and segment for location';
         var tabs = CATMAID.DOM.addTabGroup(controls, this.widgetID,
-            ['Main', activeSkeletonTab, locationTab]);
+            ['Settings', activeSkeletonTab, locationTab]);
 
         let getAnnotationTitle = () => {
           let annotations = CATMAID.TracingTool.getEffectiveImportAnnotations(this.importAnnotations, this.sourceRemote);
@@ -59,7 +59,7 @@
           return `A set of tags, separated by comma, that will be added to imported synapses (connector nodes) as tags. Every occurence of "{group}" will be replaced with your primary group (or your username, should now primary group be defined). Every occurence of "{source}" will be replaced with the handle of the import source (e.g. the server name).\n\nCurrent set of tags: ${tags}`;
         };
 
-        CATMAID.DOM.appendToTab(tabs['Main'], [
+        CATMAID.DOM.appendToTab(tabs['Settings'], [
           {
             type: 'button',
             label: 'Refresh',
