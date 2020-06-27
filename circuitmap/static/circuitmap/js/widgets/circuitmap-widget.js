@@ -12,6 +12,7 @@
     // easier to associate the result messages with individual widgets.
     this.sourceHash = `${Math.floor(Math.random() * Math.floor(2**16))}`;
 
+    this.showReferenceLines = true;
     this.fetch_upstream_skeletons = false;
     this.fetch_downstream_skeletons = false;
     this.distance_threshold = 1000;
@@ -126,8 +127,9 @@
             type: 'checkbox',
             label: 'Display reference lines',
             title: 'Show crossing lines that point to where segments are looked up',
-            value: CATMAID.StackViewer.Settings.session.display_stack_reference_lines,
+            value: this.showReferenceLines,
             onclick: e => {
+              this.showReferenceLines = e.target.checked;
               project.getStackViewers().forEach(s => s.showReferenceLines(e.target.checked));
             },
           },
@@ -407,6 +409,9 @@
         });
 
         this.updateMessage();
+
+        // Set default reference line state
+        project.getStackViewers().forEach(s => s.showReferenceLines(this.showReferenceLines));
       },
       helpPath: 'circuit-map.html',
     };
@@ -540,6 +545,12 @@
   };
 
   CircuitmapWidget.prototype.destroy = function() {
+    // Reset refernce line display if this is the last circuitmap widget
+    if (WindowMaker.getOpenWidgetsOfType(CircuitmapWidget).size === 1) {
+      project.getStackViewers().forEach(s => s.showReferenceLines(
+          CATMAID.StackViewer.Settings.session.display_stack_reference_lines));
+    }
+
     this.unregisterInstance();
     CATMAID.NeuronNameService.getInstance().unregister(this);
     SkeletonAnnotations.off(SkeletonAnnotations.EVENT_ACTIVE_NODE_CHANGED,
