@@ -45,9 +45,10 @@
       controlsID: this.idPrefix + 'controls',
       createControls: function(controls) {
         let activeSkeletonTab = 'Synapses for active skeleton';
-        let locationTab = 'Synapses and segment for location';
+        let locationTab = 'Synapses and segment for current location';
+        let settingsTab = 'General settings';
         var tabs = CATMAID.DOM.addTabGroup(controls, this.widgetID,
-            ['Settings', activeSkeletonTab, locationTab]);
+            [locationTab, settingsTab]);
 
         let getAnnotationTitle = () => {
           let annotations = CATMAID.TracingTool.getEffectiveImportAnnotations(this.importAnnotations, this.sourceRemote);
@@ -62,7 +63,7 @@
         CATMAID.DOM.appendToTab(tabs['Settings'], [
           {
             type: 'button',
-            label: 'Refresh',
+            label: 'Refresh results',
             title: 'Reload the import table',
             onclick: e => {
               this.refresh();
@@ -100,6 +101,7 @@
 
         controls.classList.add('vertical-settings');
 
+        /*
         // Fetch active skeleton tab
         CATMAID.DOM.appendToTab(tabs[activeSkeletonTab], [
           {
@@ -120,9 +122,18 @@
             onclick: e => this.fetch(),
           },
         ]);
+        */
 
         // Fetch location tab
         CATMAID.DOM.appendToTab(tabs[locationTab], [
+          {
+            type: 'button',
+            label: 'Refresh results',
+            title: 'Reload the import table',
+            onclick: e => {
+              this.refresh();
+            }
+          },
           {
             type: 'checkbox',
             label: 'Display reference lines',
