@@ -135,6 +135,11 @@
             }
           },
           {
+            type: 'button',
+            label: 'Import autoseg skeleton at location including synapses',
+            onclick: e => this.fetch_location(),
+          },
+          {
             type: 'checkbox',
             label: 'Display reference lines',
             title: 'Show crossing lines that point to where segments are looked up',
@@ -195,11 +200,6 @@
             onchange: e => {
               this.downstream_syn_count = parseInt(e.target.value, 10);
             },
-          },
-          {
-            type: 'button',
-            label: 'Fetch autoseg skeleton and synapses at location',
-            onclick: e => this.fetch_location(),
           },
         ]);
 
