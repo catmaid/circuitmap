@@ -251,7 +251,8 @@ def fetch_synapses(request: HttpRequest, project_id=None):
         try:
             segment_id = int(cv[voxel_x,voxel_y,voxel_z,0][0][0][0][0])
         except Exception as ex:
-            task_logger.debug('Exception occurred: {}'.format(ex))
+            error_message = traceback.format_exc()
+            task_logger.debug('Exception occurred: {}'.format(error_message))
             segment_id = None
             raise CircuitMapError(f"No segment found at stack location ({x}, {y}, {z}). Error: {ex}")
 
@@ -1043,7 +1044,8 @@ def import_autoseg_skeleton_with_synapses(project_id, user_id, import_id,
 
 
     except Exception as ex:
-        task_logger.error(f'Exception occurred: {ex}')
+        error_message = traceback.format_exc()
+        task_logger.error(f'Exception occurred: {error_message}')
 
 
 class SynapseImportList(APIView):
