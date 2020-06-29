@@ -874,7 +874,8 @@ def import_autoseg_skeleton_with_synapses(project_id, user_id, import_id,
             nr_components = nx.number_connected_components(g)
             if nr_components > 1:
                 task_logger.debug('more than one component in skeleton graph. use only largest component')
-                graph = max(nx.connected_component_subgraphs(g), key=len)
+                largest_cc = max(nx.connected_components(g), key=len)
+                graph = g.subgraph(largest_cc)
             else:
                 graph = g
 
