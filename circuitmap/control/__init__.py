@@ -106,7 +106,7 @@ def load_subgraph(cursor, start_segment_id, order = 0):
                     ed = g.get_edge_data(from_id,to_id)
                     ed['count'] += 1
                 else:
-                    g.add_edge(from_id, to_id, count= 1)
+                    g.add_edge(from_id, to_id, count=1)
 
             task_logger.debug(f'number of post_links {len(post_links)}')
             for idx, r in post_links.iterrows():
@@ -116,7 +116,7 @@ def load_subgraph(cursor, start_segment_id, order = 0):
                     ed = g.get_edge_data(from_id,to_id)
                     ed['count'] += 1
                 else:
-                    g.add_edge(from_id, to_id, count= 1)
+                    g.add_edge(from_id, to_id, count=1)
 
             fetched_segments.add(segment_id)
 
