@@ -143,7 +143,7 @@ def get_presynaptic_skeletons(g, segment_id, synaptic_count_threshold = 0):
         if nid == segment_id or nid == 0:
             continue
         ed = g.get_edge_data(nid, segment_id)
-        if ed['count'] > synaptic_count_threshold:
+        if ed['count'] >= synaptic_count_threshold:
             res.add(nid)
     return list(res)
 
@@ -154,7 +154,7 @@ def get_postsynaptic_skeletons(g, segment_id, synaptic_count_threshold = 0):
         if nid == segment_id or nid == 0:
             continue
         ed = g.get_edge_data(segment_id, nid)
-        if ed['count'] > synaptic_count_threshold:
+        if ed['count'] >= synaptic_count_threshold:
             res.add(nid)
     return list(res)
 
