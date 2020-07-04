@@ -298,18 +298,18 @@ def import_synapses_and_segment(project_id, user_id, import_id, segment_id,
         with_autapses=False, annotations=None, tags=None):
 
     start_time = timer()
-
-    message_payload['task'] = 'import-location'
     task_logger.debug('task: import_synapses_and_segment')
+    message_payload['task'] = 'import-location'
+
     task_logger.debug('call: import_autoseg_skeleton_with_synapses')
-    seg_import_task = import_autoseg_skeleton_with_synapses(project_id,
-            user_id, import_id, segment_id, message_user, message_payload,
+    was_imported = import_autoseg_skeleton_with_synapses(project_id,
+            user_id, import_id, segment_id, False, message_payload,
             with_autapses, annotations=annotations, tags=tags)
 
     task_logger.debug('call: import_upstream_downstream_partners')
     partner_import_task = import_upstream_downstream_partners(project_id,
             user_id, import_id, segment_id, fetch_upstream, fetch_downstream,
-            upstream_syn_count, downstream_syn_count, message_user, message_payload,
+            upstream_syn_count, downstream_syn_count, False, message_payload,
             with_autapses, annotations=annotations, tags=tags)
 
     # Only attempt to load import data after the processing is done to not
@@ -329,38 +329,62 @@ def import_upstream_downstream_partners(project_id, user_id, import_id, segment_
     error = None
     n_upstream_partners = 0
     n_downstream_partners = 0
+    task_logger.info(f'task: import_upstream_downstream_partners start {segment_id}')
+
+    # get all partners partners
+    cur = connection.cursor()
+
+    task_logger.debug('load subgraph')
+    g = load_subgraph(cur, segment_id)
+
+    synapse_import = SynapseImport.objects.get(id=import_id)
+
+    task_logger.debug('start fetching ...')
+    n_upstream_partners = 0
+    if fetch_upstream:
+        task_logger.debug('start fetching upstream...')
+        synapse_import.status = SynapseImport.Status.FETCH_PRE_PARTNERS
+        synapse_import.save()
+
+        upstream_partners = get_presynaptic_skeletons(g, segment_id, synaptic_count_threshold = upstream_syn_count)
+        n_upstream_partners = len(upstream_partners)
+        task_logger.debug(f'upstream partners: {upstream_partners}')
+        for partner_segment_id in upstream_partners:
+            task_logger.debug(f'importing presynaptic segment with id {partner_segment_id}')
+            was_import_autoseg_skeleton_with_synapses(project_id, user_id,
+                    import_id, partner_segment_id, False,
+                    with_autapses=with_autapses, set_status=False,
+                    annotations=annotations, tags=tags)
+            if was_imported:
+                n_upstream_partners += 1
+            task_logger.debug('done')
+
+    n_downstream_partners = 0
+    if fetch_downstream:
+        task_logger.debug('start fetching downstream...')
+        synapse_import.status = SynapseImport.Status.FETCH_POST_PARTNERS
+        synapse_import.save()
+
+        downstream_partners = get_postsynaptic_skeletons(g, segment_id, synaptic_count_threshold = downstream_syn_count)
+        task_logger.debug(f'upstream partners: {downstream_partners}')
+        n_downstream_partners = len(downstream_partners)
+        for partner_segment_id in downstream_partners:
+            task_logger.debug(f'importing postsynaptic segment with id {partner_segment_id}')
+            was_imported = import_autoseg_skeleton_with_synapses(project_id, user_id,
+                    import_id, partner_segment_id, False,
+                    with_autapses=with_autapses, set_status=False,
+                    annotations=annotations, tags=tags)
+            if was_imported:
+                n_downstream_partners += 1
+            task_logger.debug('done')
+
+    # Update status for this import task
+    if n_downstream_partners + n_upstream_partners > 0:
+        synapse_import.n_upstream_partners = n_upstream_partners
+        synapse_import.n_downstream_partners = n_downstream_partners
+        synapse_import.save()
+
     try:
-        task_logger.info(f'task: import_upstream_downstream_partners start {segment_id}')
-
-        # get all partners partners
-        cur = connection.cursor()
-
-        task_logger.debug('load subgraph')
-        g = load_subgraph(cur, segment_id)
-
-        task_logger.debug('start fetching ...')
-        n_upstream_partners = 0
-        if fetch_upstream:
-            upstream_partners = get_presynaptic_skeletons(g, segment_id, synaptic_count_threshold = upstream_syn_count)
-            n_upstream_partners = len(upstream_partners)
-            for partner_segment_id in upstream_partners:
-                task_logger.debug(f'spawn task for presynaptic segment_id {partner_segment_id}')
-                task = import_autoseg_skeleton_with_synapses.delay(project_id, user_id,
-                        import_id, partner_segment_id, False,
-                        with_autapses=with_autapses, set_status=False,
-                        annotations=annotations, tags=tags)
-
-        n_downstream_partners = 0
-        if fetch_downstream:
-            downstream_partners = get_postsynaptic_skeletons(g, segment_id, synaptic_count_threshold = downstream_syn_count)
-            n_downstream_partners = len(downstream_partners)
-            for partner_segment_id in downstream_partners:
-                task_logger.debug(f'spawn task for postsynaptic segment_id {partner_segment_id}')
-                task = import_autoseg_skeleton_with_synapses.delay(project_id, user_id,
-                        import_id, partner_segment_id, False,
-                        with_autapses=with_autapses, set_status=False,
-                        annotations=annotations, tags=tags)
-
         if message_user:
             payload = {
                 'task': 'import-partner-fragments',
@@ -1043,10 +1067,12 @@ def import_autoseg_skeleton_with_synapses(project_id, user_id, import_id,
 
         task_logger.debug('task: import_autoseg_skeleton_with_synapses done')
 
-
     except Exception as ex:
         error_message = traceback.format_exc()
         task_logger.error(f'Exception occurred: {error_message}')
+        return False
+
+    return True
 
 
 class SynapseImportList(APIView):
