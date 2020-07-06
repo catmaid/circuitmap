@@ -351,7 +351,7 @@ def import_upstream_downstream_partners(project_id, user_id, import_id, segment_
         task_logger.debug(f'upstream partners: {upstream_partners}')
         for partner_segment_id in upstream_partners:
             task_logger.debug(f'importing presynaptic segment with id {partner_segment_id}')
-            was_import_autoseg_skeleton_with_synapses(project_id, user_id,
+            was_imported = import_autoseg_skeleton_with_synapses(project_id, user_id,
                     import_id, partner_segment_id, False,
                     with_autapses=with_autapses, set_status=False,
                     annotations=annotations, tags=tags)
