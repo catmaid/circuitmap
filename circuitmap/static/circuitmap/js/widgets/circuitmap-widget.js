@@ -492,6 +492,23 @@
           }, {});
           skeletonTarget.append(models);
         });
+
+        // Add title attributes to theader
+        $('thead th:eq(0)', importTable).attr('title', 'The ID of the import task');
+        $('thead th:eq(1)', importTable).attr('title', 'The user who started the import');
+        $('thead th:eq(2)', importTable).attr('title', 'The the neuron that had synapses imported, optionally after it was imported');
+        $('thead th:eq(3)', importTable).attr('title', 'Current status of task');
+        $('thead th:eq(4)', importTable).attr('title', 'Last time this task was updated');
+        $('thead th:eq(5)', importTable).attr('title', 'Time it took the task to run');
+        $('thead th:eq(6)', importTable).attr('title', 'Number of newly created synaptic links');
+        $('thead th:eq(7)', importTable).attr('title', 'Number of newly created connector nodes (synapses)');
+        $('thead th:eq(8)', importTable).attr('title', 'Number of imported presynaptic partners along with the initial expectation. The difference could not be imported.');
+        $('thead th:eq(9)', importTable).attr('title', 'Number of imported postsynaptic partners along with the initial expectation. The difference could not be imported.');
+        $('thead th:eq(10)', importTable).attr('title', 'The number of synaptic connections to a presynapyic partner that are needed before it can be imported');
+        $('thead th:eq(11)', importTable).attr('title', 'The number of synaptic connections to a postsynapyic partner that are needed before it can be imported');
+        $('thead th:eq(12)', importTable).attr('title', 'Maximum distance to a segmented fragment, after which it isn\'t considered for a match anymore');
+        $('thead th:eq(13)', importTable).attr('title', 'Whether or not autapses are allowed during the import');
+        $('thead th:eq(14)', importTable).attr('title', 'Optional actions');
       },
       init: function() {
         var self = this;
