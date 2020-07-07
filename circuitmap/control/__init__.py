@@ -138,6 +138,8 @@ def load_subgraph(cursor, start_segment_id, order = 0):
     return g
 
 def get_presynaptic_skeletons(g, segment_id, synaptic_count_threshold = 0):
+    if len(g) == 0:
+        return []
     res = set()
     for nid in g.predecessors(segment_id):
         if nid == segment_id or nid == 0:
@@ -145,10 +147,13 @@ def get_presynaptic_skeletons(g, segment_id, synaptic_count_threshold = 0):
         ed = g.get_edge_data(nid, segment_id)
         if ed['count'] >= synaptic_count_threshold:
             res.add(nid)
+    print('res', res)
     return list(res)
 
 
 def get_postsynaptic_skeletons(g, segment_id, synaptic_count_threshold = 0):
+    if len(g) == 0:
+        return []
     res = set()
     for nid in g.successors(segment_id):
         if nid == segment_id or nid == 0:
