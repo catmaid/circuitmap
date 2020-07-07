@@ -349,6 +349,7 @@ def import_upstream_downstream_partners(project_id, user_id, import_id, segment_
     g = load_subgraph(cur, segment_id)
 
     synapse_import = SynapseImport.objects.get(id=import_id)
+    update_step = 5
 
     task_logger.debug(f'start fetching with graph size {len(g)}...')
     n_upstream_partners = 0
@@ -358,8 +359,10 @@ def import_upstream_downstream_partners(project_id, user_id, import_id, segment_
         synapse_import.save()
 
         upstream_partners = get_presynaptic_skeletons(g, segment_id, synaptic_count_threshold = upstream_syn_count)
-        n_upstream_partners = len(upstream_partners)
+        synapse_import.n_expected_upstream_partners = len(upstream_partners)
+        synapse_import.save()
         task_logger.debug(f'upstream partners: {upstream_partners}')
+        last_update = 0
         for partner_segment_id in upstream_partners:
             task_logger.debug(f'importing presynaptic segment with id {partner_segment_id}')
             was_imported = import_autoseg_skeleton_with_synapses(project_id, user_id,
@@ -368,6 +371,10 @@ def import_upstream_downstream_partners(project_id, user_id, import_id, segment_
                     annotations=annotations, tags=tags)
             if was_imported:
                 n_upstream_partners += 1
+            if n_upstream_partners // update_step > last_update:
+                last_update += 1
+                synapse_import.n_upstream_partners = n_upstream_partners
+                synapse_import.save()
             task_logger.debug('done')
 
     n_downstream_partners = 0
@@ -377,8 +384,10 @@ def import_upstream_downstream_partners(project_id, user_id, import_id, segment_
         synapse_import.save()
 
         downstream_partners = get_postsynaptic_skeletons(g, segment_id, synaptic_count_threshold = downstream_syn_count)
-        task_logger.debug(f'upstream partners: {downstream_partners}')
-        n_downstream_partners = len(downstream_partners)
+        task_logger.debug(f'downstream partners: {downstream_partners}')
+        synapse_import.n_expected_downstream_partners = len(downstream_partners)
+        synapse_import.save()
+        last_update = 0
         for partner_segment_id in downstream_partners:
             task_logger.debug(f'importing postsynaptic segment with id {partner_segment_id}')
             was_imported = import_autoseg_skeleton_with_synapses(project_id, user_id,
@@ -387,6 +396,10 @@ def import_upstream_downstream_partners(project_id, user_id, import_id, segment_
                     annotations=annotations, tags=tags)
             if was_imported:
                 n_downstream_partners += 1
+            if n_downstream_partners // update_step > last_update:
+                last_update += 1
+                synapse_import.n_downstream_partners = n_downstream_partners
+                synapse_import.save()
             task_logger.debug('done')
 
     # Update status for this import task
@@ -1105,7 +1118,8 @@ class SynapseImportList(APIView):
                 status_detail, runtime, request_id, skeleton_id, n_imported_links,
                 n_imported_connectors, n_upstream_partners, n_downstream_partners,
                 upstream_partner_syn_threshold, downsteam_partner_syn_threshold,
-                distance_threshold, with_autapses, tags, annotations
+                distance_threshold, with_autapses, tags, annotations,
+                n_expected_upstream_partners, n_expected_downstream_partners
             FROM circuitmap_synapseimport si
             WHERE project_id = %(project_id)s
         """, {
@@ -1132,4 +1146,6 @@ class SynapseImportList(APIView):
             'with_autapses': r[17],
             'tags': r[18],
             'annotations': r[19],
+            'n_expected_upstream_partners': r[20],
+            'n_expected_downstream_partners': r[21],
         } for r in cursor.fetchall()], safe=False)

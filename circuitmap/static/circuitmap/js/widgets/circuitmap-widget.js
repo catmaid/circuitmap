@@ -353,12 +353,18 @@
               class: "cm-center",
               searchable: true,
               orderable: true,
+              render: function(data, type, row, meta) {
+                return `${row.n_upstream_partners} / ${row.n_expected_upstream_partners}`;
+              },
             }, {
               data: "n_downstream_partners",
               title: "# New down. partners",
               class: "cm-center",
               searchable: true,
               orderable: true,
+              render: function(data, type, row, meta) {
+                return `${row.n_downstream_partners} / ${row.n_expected_downstream_partners}`;
+              },
             }, {
               data: "upstream_partner_syn_threshold",
               title: "Up. syn thrsh.",

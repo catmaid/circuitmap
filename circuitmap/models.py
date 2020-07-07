@@ -77,6 +77,8 @@ class SynapseImport(models.Model):
     # The number of upstream and downstream partners that were imported.
     n_upstream_partners = models.IntegerField(blank=True, default=0)
     n_downstream_partners = models.IntegerField(blank=True, default=0)
+    n_expected_upstream_partners = models.IntegerField(blank=True, default=0)
+    n_expected_downstream_partners = models.IntegerField(blank=True, default=0)
     # Tags and annotations stored with this import. We don't really need
     # referential integrety here, as this is more of a task description.
     tags = ArrayField(models.TextField(), blank=True, default=list)
