@@ -492,10 +492,10 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
     synapse_import = None
     try:
         # Set status to computing
-        task_logger.debug(f'SI ID: {import_id}')
         synapse_import = SynapseImport.objects.get(id=import_id)
-        synapse_import.status = SynapseImport.Status.COMPUTING
-        synapse_import.save()
+        if set_status:
+            synapse_import.status = SynapseImport.Status.COMPUTING
+            synapse_import.save()
 
         # Retrieve skeleton with all nodes directly from the database
         cursor = connection.cursor()
@@ -804,10 +804,10 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
         if set_status:
             synapse_import.status = SynapseImport.Status.DONE
             synapse_import.status_detail = ""
-        synapse_import.runtime = timer() - start_time
-        synapse_import.n_imported_connectors = len(connectors)
-        synapse_import.n_imported_links = len(treenode_connector)
-        synapse_import.save()
+            synapse_import.runtime = timer() - start_time
+            synapse_import.n_imported_connectors = len(connectors)
+            synapse_import.n_imported_links = len(treenode_connector)
+            synapse_import.save()
         task_logger.debug('task: import_synapses_for_existing_skeleton started: done')
     except Exception as ex:
         error_message = traceback.format_exc()
@@ -1029,9 +1029,8 @@ def import_autoseg_skeleton_with_synapses(project_id, user_id, import_id,
 
             if set_status:
                 synapse_import.skeleton_id = skeleton_class_instance_id
+                segment_import.n_imported_nodes += n_imported_nodes
                 synapse_import.save()
-            segment_import.n_imported_nodes += n_imported_nodes
-            segment_import.save()
 
             task_logger.debug('run multiquery')
             if with_multi:
