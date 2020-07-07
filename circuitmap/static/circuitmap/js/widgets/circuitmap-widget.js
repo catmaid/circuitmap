@@ -403,7 +403,7 @@
               searchable: false,
               orderable: false,
               render: function(data, type, row, meta) {
-                return !row.skeleton_id ? '-' :
+                return (!row.skeleton_id || row.skeleton_id === -1) ? '-' :
                   '<ul class="resultTags">' +
                     '<li><a href="#" data-role="show-3d">3D</a></li> ' +
                   '</ul>';
