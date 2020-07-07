@@ -219,6 +219,7 @@
         let statusLine = statusWrapper.appendChild(document.createElement('span'));
         statusLine.classList.add('status-line');
 
+        this.lastImportData = null;
         let importTable = container.appendChild(document.createElement('table'));
         this.importTable = $(importTable).DataTable({
           dom: '<"user-select">lrphtip',
@@ -233,10 +234,49 @@
                 return CATMAID.NeuronNameService.getInstance().registerAllFromList(this, skeletonIds)
                   .then(() => importData);
               })
-              .then(importData => callback({
+              .then(importData => {
+                callback({
                   draw: data.draw,
                   data: importData,
-              }))
+                });
+                // Update tracing data only if there was a change observed
+                if (importData && this.lastImportData) {
+                  let changed = false;
+                  let idLookup = this.lastImportData.reduce((o, e) => o.set(e.id, e), new Map())
+                  for (let idElement of importData) {
+                    let lastIdElement = idLookup.get(idElement.id);
+                    for (let idKey in idElement) {
+                      if (!lastIdElement || !lastIdElement.hasOwnProperty(idKey)) {
+                        changed = true;
+                        break;
+                      }
+                      let lidElement = lastIdElement[idKey];
+                      let [valA, valB] = [idElement[idKey], lastIdElement[idKey]];
+                      if (valA.constructor !== valB.constructor) {
+                        changed =true;
+                        break;
+                      } else if (valA instanceof Array) {
+                        if (!CATMAID.tools.arraysEqual(valA, valB)) {
+                          changed = true;
+                          break;
+                        }
+
+                      } else if (valA !== valB) {
+                        changed = true;
+                        break;
+                      }
+                    }
+
+                    if (changed) {
+                      break;
+                    }
+                  }
+                  if (changed) {
+                    CATMAID.State.trigger(CATMAID.State.EVENT_STATE_NEEDS_UPDATE);
+                  }
+                }
+                this.lastImportData = importData;
+              })
               .catch(CATMAID.handleError);
           },
           columns: [
