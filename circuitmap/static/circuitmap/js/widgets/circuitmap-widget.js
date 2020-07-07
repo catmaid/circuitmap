@@ -670,7 +670,7 @@
   };
 
   CircuitmapWidget.prototype.destroy = function() {
-    // Reset refernce line display if this is the last circuitmap widget
+    // Reset refernce line display if thsi is the last circuitmap widget
     if (WindowMaker.getOpenWidgetsOfType(CircuitmapWidget).size === 1) {
       project.getStackViewers().forEach(s => s.showReferenceLines(
           CATMAID.StackViewer.Settings.session.display_stack_reference_lines));
