@@ -350,9 +350,9 @@ def import_upstream_downstream_partners(project_id, user_id, import_id, segment_
 
     synapse_import = SynapseImport.objects.get(id=import_id)
 
-    task_logger.debug('start fetching ...')
+    task_logger.debug(f'start fetching with graph size {len(g)}...')
     n_upstream_partners = 0
-    if fetch_upstream:
+    if fetch_upstream and len(g) > 0:
         task_logger.debug('start fetching upstream...')
         synapse_import.status = SynapseImport.Status.FETCH_PRE_PARTNERS
         synapse_import.save()
@@ -371,7 +371,7 @@ def import_upstream_downstream_partners(project_id, user_id, import_id, segment_
             task_logger.debug('done')
 
     n_downstream_partners = 0
-    if fetch_downstream:
+    if fetch_downstream and len(g) > 0:
         task_logger.debug('start fetching downstream...')
         synapse_import.status = SynapseImport.Status.FETCH_POST_PARTNERS
         synapse_import.save()
