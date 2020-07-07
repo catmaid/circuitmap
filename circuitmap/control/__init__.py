@@ -264,6 +264,7 @@ def fetch_synapses(request: HttpRequest, project_id=None):
         if segment_id is None or segment_id == 0:
             raise CircuitMapError(f"No segment found at stack location ({x}, {y}, {z})")
         else:
+            task_logger.debug('no active skeleton')
             # We need to make sure the SynapseImport model object is committed
             # to the DB, before we call the async task that uses it.
             with transaction.atomic():
@@ -307,21 +308,26 @@ def import_synapses_and_segment(project_id, user_id, import_id, segment_id,
     message_payload['task'] = 'import-location'
 
     task_logger.debug('call: import_autoseg_skeleton_with_synapses')
-    was_imported = import_autoseg_skeleton_with_synapses(project_id,
-            user_id, import_id, segment_id, False, message_payload,
-            with_autapses, annotations=annotations, tags=tags)
+    was_imported = import_autoseg_skeleton_with_synapses(project_id, user_id,
+            import_id, segment_id, False, message_payload, with_autapses,
+            set_status=True, annotations=annotations, tags=tags)
 
-    task_logger.debug('call: import_upstream_downstream_partners')
-    partner_import_task = import_upstream_downstream_partners(project_id,
-            user_id, import_id, segment_id, fetch_upstream, fetch_downstream,
-            upstream_syn_count, downstream_syn_count, False, message_payload,
-            with_autapses, annotations=annotations, tags=tags)
+    if was_imported:
+        task_logger.debug('call: import_upstream_downstream_partners')
+        import_upstream_downstream_partners(project_id, user_id, import_id,
+                segment_id, fetch_upstream, fetch_downstream, upstream_syn_count,
+                downstream_syn_count, False, message_payload, with_autapses,
+                annotations=annotations, tags=tags)
+        status = SynapseImport.Status.DONE
+    else:
+        task_logger.debug('no data found')
+        status = SynapseImport.Status.NO_DATA
 
     # Only attempt to load import data after the processing is done to not
     # override the newly createad state.
     synapse_import = SynapseImport.objects.get(id=import_id)
     if synapse_import.status != SynapseImport.Status.ERROR:
-        synapse_import.status = SynapseImport.Status.DONE
+        synapse_import.status = status
     synapse_import.runtime = timer() - start_time
     synapse_import.save()
     task_logger.debug('task: import_synapses_and_segment: done')

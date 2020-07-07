@@ -52,6 +52,7 @@ class SynapseImport(models.Model):
         ERROR = 4
         FETCH_PRE_PARTNERS = 5
         FETCH_POST_PARTNERS = 6
+        NO_DATA = 7
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, db_index=True)
     project = models.ForeignKey(Project, on_delete=models.CASCADE)
