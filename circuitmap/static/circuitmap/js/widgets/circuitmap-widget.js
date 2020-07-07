@@ -392,7 +392,17 @@
               render: function(data, type, row, meta) {
                 return data ? "Yes" : "No";
               },
-            },
+            }, {
+              class: 'cm-center',
+              searchable: false,
+              orderable: false,
+              render: function(data, type, row, meta) {
+                return row.status.toLowerCase() !== 'done' ? '-' :
+                  '<ul class="resultTags">' +
+                    '<li><a href="#" data-role="show-3d">3D</a></li> ' +
+                  '</ul>';
+              },
+            }
           ],
           language: {
             emptyTable: 'No imports found',
@@ -434,6 +444,47 @@
             return;
           }
           CATMAID.TracingTool.goToNearestInNeuronOrSkeleton('skeleton', data.skeleton_id);
+        }).on('click', 'a[data-role=show-3d]', e => {
+          let data = this.importTable.row($(e.target).parents('tr')).data();
+          if (data.skeleton_id === -1) {
+            CATMAID.warn('No skeleton imported');
+            return;
+          }
+          let widget3dInfo = WindowMaker.create('3d-viewer');
+          let widget3d = widget3dInfo.widget;
+          // Try to find the Selection Table that has been opened along with the 3D
+          // Viewer. If it can't be found, the 3D Viewer will be used to add
+          // skeletons.
+          let splitNode = widget3dInfo.window.getParent();
+          let skeletonTarget = widget3d;
+          if (splitNode) {
+            let children = splitNode.getChildren();
+            for (let i=0; i<children.length; ++i) {
+              let win = children[i];
+              if (win === widget3dInfo.window) continue;
+              let widgetInfo = CATMAID.WindowMaker.getWidgetKeyForWindow(win);
+              if (widgetInfo && widgetInfo.widget instanceof CATMAID.SelectionTable) {
+                skeletonTarget = widgetInfo.widget;
+                break;
+              }
+            }
+          }
+
+          widget3d.options.shading_method = 'none';
+          widget3d.options.color_method = 'none';
+
+          let focusSkeleton = () => {
+            widget3d.lookAtSkeleton(data.skeleton_id);
+            widget3d.off(widget3d.EVENT_MODELS_ADDED, focusSkeleton);
+          };
+
+          widget3d.on(widget3d.EVENT_MODELS_ADDED, focusSkeleton);
+
+          let models = [data.skeleton_id].reduce(function(o, s) {
+            o[s] = new CATMAID.SkeletonModel(s);
+            return o;
+          }, {});
+          skeletonTarget.append(models);
         });
       },
       init: function() {
