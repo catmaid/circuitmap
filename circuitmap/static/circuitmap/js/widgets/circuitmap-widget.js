@@ -403,7 +403,7 @@
               searchable: false,
               orderable: false,
               render: function(data, type, row, meta) {
-                return row.status.toLowerCase() !== 'done' ? '-' :
+                return !row.skeleton_id ? '-' :
                   '<ul class="resultTags">' +
                     '<li><a href="#" data-role="show-3d">3D</a></li> ' +
                   '</ul>';
