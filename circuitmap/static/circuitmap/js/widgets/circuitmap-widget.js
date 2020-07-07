@@ -257,7 +257,7 @@
               render: function(data, type, row, meta) {
                 let name = CATMAID.NeuronNameService.getInstance().getName(data);
                 return '<a href="#" class="neuron-selection-link" data-role="select-skeleton">' +
-                  (name ? name : "(not yet available)") + '</a>';
+                  (row.status.toLowerCase() === 'no data' ? '-' : (name ? name : "(not yet available)")) + '</a>';
               }
             }, {
               title: "Status",
