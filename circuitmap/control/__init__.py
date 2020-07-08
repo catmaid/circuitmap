@@ -352,16 +352,28 @@ def import_upstream_downstream_partners(project_id, user_id, import_id, segment_
     update_step = 5
 
     task_logger.debug(f'start fetching with graph size {len(g)}...')
+
+    fetch_upstream_partners = fetch_upstream and len(g) > 0
+    fetch_downstream_partners = fetch_downstream and len(g) > 0
+
+    # Populate expectation stats, this is useful in the front-end.
+    if fetch_upstream_partners or fetch_downstream_partners:
+        if fetch_downstream_partners:
+            upstream_partners = get_presynaptic_skeletons(g, segment_id,
+                    synaptic_count_threshold = upstream_syn_count)
+            synapse_import.n_expected_upstream_partners = len(upstream_partners)
+        if fetch_downstream_partners:
+            downstream_partners = get_presynaptic_skeletons(g, segment_id,
+                    synaptic_count_threshold = downstream_syn_count)
+            synapse_import.n_expected_downstream_partners = len(downstream_partners)
+        synapse_import.save()
+
     n_upstream_partners = 0
-    if fetch_upstream and len(g) > 0:
-        task_logger.debug('start fetching upstream...')
+    if fetch_upstream_partners:
+        task_logger.debug(f'fetching upstream partners: {upstream_partners}')
         synapse_import.status = SynapseImport.Status.FETCH_PRE_PARTNERS
         synapse_import.save()
 
-        upstream_partners = get_presynaptic_skeletons(g, segment_id, synaptic_count_threshold = upstream_syn_count)
-        synapse_import.n_expected_upstream_partners = len(upstream_partners)
-        synapse_import.save()
-        task_logger.debug(f'upstream partners: {upstream_partners}')
         last_update = 0
         for partner_segment_id in upstream_partners:
             task_logger.debug(f'importing presynaptic segment with id {partner_segment_id}')
@@ -378,14 +390,9 @@ def import_upstream_downstream_partners(project_id, user_id, import_id, segment_
             task_logger.debug('done')
 
     n_downstream_partners = 0
-    if fetch_downstream and len(g) > 0:
-        task_logger.debug('start fetching downstream...')
+    if fetch_downstream_partners:
+        task_logger.debug(f'fetching downstream partners: {downstream_partners}')
         synapse_import.status = SynapseImport.Status.FETCH_POST_PARTNERS
-        synapse_import.save()
-
-        downstream_partners = get_postsynaptic_skeletons(g, segment_id, synaptic_count_threshold = downstream_syn_count)
-        task_logger.debug(f'downstream partners: {downstream_partners}')
-        synapse_import.n_expected_downstream_partners = len(downstream_partners)
         synapse_import.save()
         last_update = 0
         for partner_segment_id in downstream_partners:
