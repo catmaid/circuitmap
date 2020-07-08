@@ -476,7 +476,8 @@
             }
           }
 
-          widget3d.options.shading_method = 'none';
+          widget3d.options.shading_scale = 1.75;
+          widget3d.options.shading_method = 'scaled-strahler';
           widget3d.options.color_method = 'none';
 
           let focusSkeleton = () => {
