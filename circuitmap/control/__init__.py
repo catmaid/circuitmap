@@ -1046,14 +1046,14 @@ def import_autoseg_skeleton_with_synapses(project_id, user_id, import_id,
             else:
                 cursor.execute(query)
 
+            task_logger.debug('run multiquery')
+            if with_multi:
+                cursor.execute('\n'.join(queries))
+
             if set_status:
                 synapse_import.skeleton_id = skeleton_class_instance_id
                 segment_import.n_imported_nodes += n_imported_nodes
                 synapse_import.save()
-
-            task_logger.debug('run multiquery')
-            if with_multi:
-                cursor.execute('\n'.join(queries))
 
             # add annotations to imported neurons
             if annotations:
