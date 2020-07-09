@@ -1092,7 +1092,7 @@ def import_autoseg_skeleton_with_synapses(project_id, user_id, import_id,
 
         import_synapses_for_existing_skeleton(project_id, user_id, import_id,
             -1,  skeleton_class_instance_id, segment_id, message_user,
-            message_payload, with_autapses, set_status=False,
+            message_payload, with_autapses, set_status=set_status,
             annotations=annotations, tags=tags)
 
         task_logger.debug('task: import_autoseg_skeleton_with_synapses done')
