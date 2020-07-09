@@ -313,6 +313,10 @@ def import_synapses_and_segment(project_id, user_id, import_id, segment_id,
     task_logger.debug('task: import_synapses_and_segment')
     message_payload['task'] = 'import-location'
 
+    synapse_import = SynapseImport.objects.get(id=import_id)
+    synapse_import.status = SynapseImport.Status.COMPUTING
+    synapse_import.save()
+
     task_logger.debug('call: import_autoseg_skeleton_with_synapses')
     was_imported = import_autoseg_skeleton_with_synapses(project_id, user_id,
             import_id, segment_id, False, message_payload, with_autapses,
@@ -328,6 +332,8 @@ def import_synapses_and_segment(project_id, user_id, import_id, segment_id,
     else:
         task_logger.debug('no data found')
         status = SynapseImport.Status.NO_DATA
+
+    synapse_import.refresh_from_db()
 
     # Only attempt to load import data after the processing is done to not
     # override the newly createad state.
