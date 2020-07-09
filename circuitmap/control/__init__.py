@@ -274,11 +274,17 @@ def fetch_synapses(request: HttpRequest, project_id=None):
                         voxel_x=voxel_x, voxel_y=voxel_y, voxel_z=voxel_z,
                         physical_x=x, physical_y=y, physical_z=z)
 
-            import_synapses_and_segment.delay(pid, request.user.id,
-                    synapse_import.id, segment_id, fetch_upstream,
-                    fetch_downstream, upstream_syn_count, downstream_syn_count,
-                    True, msg_payload, with_autapses, annotations, tags)
 
+            def run_import():
+                import_synapses_and_segment.delay(pid, request.user.id,
+                        synapse_import.id, segment_id, fetch_upstream,
+                        fetch_downstream, upstream_syn_count,
+                        downstream_syn_count, True, msg_payload, with_autapses,
+                        annotations, tags)
+
+            # This is run after the commit so that we can be sure all task
+            # tracking objects have been created.
+            transaction.on_commit(run_import)
 
             return JsonResponse({
                 'project_id': pid,
