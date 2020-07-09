@@ -406,6 +406,7 @@
                 return (!row.skeleton_id || row.skeleton_id === -1) ? '-' :
                   '<ul class="resultTags">' +
                     '<li><a href="#" data-role="show-3d">3D</a></li> ' +
+                    '<li><a href="#" data-role="show-graph"><i class="fa fa-share-alt" style="color: dimgrey" title="Show neighborhood graph"></i></a></li> ' +
                   '</ul>';
               },
             }
@@ -491,6 +492,36 @@
             o[s] = new CATMAID.SkeletonModel(s);
             return o;
           }, {});
+          skeletonTarget.append(models);
+        }).on('click', 'a[data-role=show-graph]', e => {
+          let data = this.importTable.row($(e.target).parents('tr')).data();
+          if (data.skeleton_id === -1) {
+            CATMAID.warn('No skeleton imported');
+            return;
+          }
+          let widgetInfo = WindowMaker.create('graph-widget');
+          let widget = widgetInfo.widget;
+          let skeletonTarget = widget;
+          let models = [data.skeleton_id].reduce(function(o, s) {
+            o[s] = new CATMAID.SkeletonModel(s);
+            return o;
+          }, {});
+
+          let focusSkeleton = () => {
+            // Switch off event
+            widget.off(widget.EVENT_MODELS_ADDED, focusSkeleton);
+            widget.cy.nodes().each((i, node) => node.select());
+            // Find partners
+            widget.growGraph({
+              n_circles: 1,
+              min_downstream: 0,
+              min_upstream: 0,
+              filter_regex: '',
+            });
+          };
+
+          widget.on(widget.EVENT_MODELS_ADDED, focusSkeleton);
+
           skeletonTarget.append(models);
         });
 
