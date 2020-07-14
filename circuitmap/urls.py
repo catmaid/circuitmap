@@ -13,4 +13,6 @@ urlpatterns = [
     url(r'^test$', circuitmap.control.test),
     url(r'^(?P<project_id>\d+)/synapses/fetch$', circuitmap.control.fetch_synapses),
     url(r'^(?P<project_id>\d+)/imports/$', circuitmap.control.SynapseImportList.as_view()),
+    url(r'^(?P<project_id>\d+)/imports/last-update$', circuitmap.control.LastGeneralImportUpdate.as_view()),
+    url(r'^(?P<project_id>\d+)/imports/(?P<import_id>\d+)/last-update$', circuitmap.control.LastImportUpdate.as_view()),
 ]

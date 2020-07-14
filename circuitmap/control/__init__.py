@@ -300,6 +300,7 @@ def fetch_synapses(request: HttpRequest, project_id=None):
         return JsonResponse({
             'project_id': pid,
             'import_ref': synapse_import.id,
+            'edition_time': synapse_import.edition_time,
         })
 
 
@@ -1167,3 +1168,76 @@ class SynapseImportList(APIView):
             'n_expected_upstream_partners': r[20],
             'n_expected_downstream_partners': r[21],
         } for r in cursor.fetchall()], safe=False)
+
+
+class LastGeneralImportUpdate(APIView):
+
+    @method_decorator(requires_user_role(UserRole.Browse))
+    def get(self, request:HttpRequest, project_id) -> JsonResponse:
+        """Get a date and time stamp of the last updates on synapse imports.
+        ---
+        parameters:
+          - name: project_id
+            description: Project for which to check imports.
+            type: integer
+            paramType: path
+            required: true
+        """
+        cursor = connection.cursor()
+        cursor.execute("""
+            SELECT id, edition_time, status
+            FROM circuitmap_synapseimport si
+            WHERE project_id = %(project_id)s
+            ORDER BY edition_time DESC
+            LIMIT 1
+        """, {
+            'import_id': import_id,
+        })
+        r = cursor.fetchone()
+        if not r:
+            return JsonResponse({
+                'id': None,
+                'edition_time': None,
+                'status': None,
+            })
+        return JsonResponse({
+            'id': r[0],
+            'edition_time': r[1],
+            'status': SynapseImport.Status.labels[r[2]],
+        })
+
+
+class LastImportUpdate(APIView):
+
+    @method_decorator(requires_user_role(UserRole.Browse))
+    def get(self, request:HttpRequest, project_id, import_id) -> JsonResponse:
+        """Get a date and timestamp of the last updates of ant import.
+        ---
+        parameters:
+          - name: project_id
+            description: Project for which to check imports.
+            type: integer
+            paramType: path
+            required: true
+        """
+        cursor = connection.cursor()
+        cursor.execute("""
+            SELECT id, edition_time, status
+            FROM circuitmap_synapseimport si
+            WHERE project_id = %(project_id)s
+            AND  id = %(import_id)s
+            ORDER BY edition_time DESC
+            LIMIT 1
+        """, {
+            'project_id': project_id,
+            'import_id': import_id,
+        })
+        r = cursor.fetchone()
+        if not r:
+            raise ValueError(f'Import {import_id} not found')
+
+        return JsonResponse({
+            'id': r[0],
+            'edition_time': r[1],
+            'status': SynapseImport.Status.labels[r[2]],
+        })

@@ -24,6 +24,14 @@
     this.importAnnotations = CATMAID.TracingTool.getDefaultImportAnnotations();
     this.importTags = CATMAID.TracingTool.getDefaultImportTags();
 
+    // The framework timeout reference, to check for updates if websockets don't
+    // work.
+    this.updateTimeout = null;
+    this.updateCheckInterval = 4000;
+    this.lastEdit = null;
+    this.stopPolling = false;
+    this.pollingEnabled = true;
+
     let config = CATMAID.extensionConfig['circuitmap']
     this.sourceRemote = config ? config['seg_name'] : '';
 
@@ -665,6 +673,8 @@
     var stackViewer = project.focusedStackViewer;
     var stack = project.focusedStackViewer.primaryStack;
 
+    this.stopPolling = !this.pollingEnabled;
+
     var query_data = {
       'x': stackViewer.x,
       'y': stackViewer.y,
@@ -685,23 +695,56 @@
 
     this.updateMessage(`Fetching segment and synapses for stack location (${stackViewer.x}, ${stackViewer.y}, ${stackViewer.z})`);
     CATMAID.fetch('ext/circuitmap/' + project.id + '/synapses/fetch', 'POST', query_data)
-      .then((e) => {
+      .then(result => {
         CATMAID.msg("Success", "Import process started ...");
         this.refresh();
+
+        // Create a new fallback timeout, cancel any old one
+        this.lastEdit = new Date(result.edition_time);
+        if (this.updateTimeout) {
+          window.clearTimeout(this.updateTimeout);
+        }
+        let checkForUpdate = () => {
+          CATMAID.fetch(`ext/circuitmap/${project.id}/imports/${result.import_ref}/last-update`)
+            .then(update => {
+              if (this.stopPolling || !this.pollingEnabled) {
+                return;
+              }
+              // Compare to difference of last update and refresh if there is a
+              // change.
+              let lastEdit = new Date(update.edition_time);
+              if (this.lastEdit && lastEdit > this.lastEdit) {
+                this.lastEdit = lastEdit;
+                this.refresh();
+              }
+
+              let status = update.status.toLowerCase();
+              if (status !== 'error' && status !== 'no data' && status !== 'done') {
+                window.setTimeout(checkForUpdate, this.updateCheckInterval);
+              } else {
+                this.stopPolling = true;
+                this.refresh();
+              }
+            })
+            .catch(CATMAID.handleError);
+        };
+        this.updateTimeout = window.setTimeout(checkForUpdate, this.updateCheckInterval)
       })
       .catch(e => {
         this.updateMessage(`An error occured while fetching segment and synapses for stack location (${stackViewer.x}, ${stackViewer.y}, ${stackViewer.z}): ${e.message}`);
+
         this.refresh();
         if (e.type !== 'CircuitMapError') {
           CATMAID.handleError(e);
         } else {
           CATMAID.warn(e.message);
         }
-      });
+      })
 
   };
 
   CircuitmapWidget.prototype.destroy = function() {
+    this.pollingEnabled = false;
     // Reset refernce line display if thsi is the last circuitmap widget
     if (WindowMaker.getOpenWidgetsOfType(CircuitmapWidget).size === 1) {
       project.getStackViewers().forEach(s => s.showReferenceLines(
