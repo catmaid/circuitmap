@@ -371,7 +371,7 @@ def import_upstream_downstream_partners(project_id, user_id, import_id, segment_
 
     # Populate expectation stats, this is useful in the front-end.
     if fetch_upstream_partners or fetch_downstream_partners:
-        if fetch_downstream_partners:
+        if fetch_upstream_partners:
             upstream_partners = get_presynaptic_skeletons(g, segment_id,
                     synaptic_count_threshold = upstream_syn_count)
             synapse_import.n_expected_upstream_partners = len(upstream_partners)
