@@ -357,11 +357,15 @@ def import_upstream_downstream_partners(project_id, user_id, import_id, segment_
 
     # get all partners partners
     cur = connection.cursor()
+    synapse_import = SynapseImport.objects.get(id=import_id)
+
+    if not synapse_import.skeleton_id:
+        task_logger.error("Need existing skeleton ID for partner import")
+        raise ValueError("Need existing skeleton ID for partner import")
 
     task_logger.debug('load subgraph')
     g = load_subgraph(cur, segment_id)
 
-    synapse_import = SynapseImport.objects.get(id=import_id)
     update_step = 5
 
     task_logger.debug(f'start fetching with graph size {len(g)}...')
