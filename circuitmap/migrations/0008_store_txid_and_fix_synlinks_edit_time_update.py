@@ -10,7 +10,7 @@ class Migration(migrations.Migration):
     """
 
     dependencies = [
-        ('circuitmap', '0007_add_auto_update_timestamp'),
+        ('circuitmap', '0008_add_edition_time_auto_update_to_tasks'),
     ]
 
     operations = [
