@@ -376,7 +376,7 @@ def import_upstream_downstream_partners(project_id, user_id, import_id, segment_
                     synaptic_count_threshold = upstream_syn_count)
             synapse_import.n_expected_upstream_partners = len(upstream_partners)
         if fetch_downstream_partners:
-            downstream_partners = get_presynaptic_skeletons(g, segment_id,
+            downstream_partners = get_postsynaptic_skeletons(g, segment_id,
                     synaptic_count_threshold = downstream_syn_count)
             synapse_import.n_expected_downstream_partners = len(downstream_partners)
         synapse_import.save()
