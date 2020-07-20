@@ -716,70 +716,59 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
 
         with_multi = True
         queries = []
-        query = 'BEGIN;'
-        if with_multi:
-            queries.append(query)
-        else:
-            cursor.execute(query)
+        with transaction.atomic():
+            # insert connectors
+            task_logger.debug('start inserting connectors')
+            for connector_id, r in connectors.items():
+                q = """
+            INSERT INTO connector (id, user_id, editor_id, project_id, location_x, location_y, location_z)
+                        VALUES ({},{},{},{},{},{},{}) ON CONFLICT (id) DO NOTHING;
+                    """.format(
+                    connector_id,
+                    DEFAULT_IMPORT_USER,
+                    DEFAULT_IMPORT_USER,
+                    project_id,
+                    int(r['pre_x']),
+                    int(r['pre_y']),
+                    int(r['pre_z']))
 
-        # insert connectors
-        task_logger.debug('start inserting connectors')
-        for connector_id, r in connectors.items():
-            q = """
-        INSERT INTO connector (id, user_id, editor_id, project_id, location_x, location_y, location_z)
-                    VALUES ({},{},{},{},{},{},{}) ON CONFLICT (id) DO NOTHING;
-                """.format(
-                connector_id,
-                DEFAULT_IMPORT_USER,
-                DEFAULT_IMPORT_USER,
-                project_id,
-                int(r['pre_x']),
-                int(r['pre_y']),
-                int(r['pre_z']))
+                if with_multi:
+                    queries.append(q)
+                else:
+                    cursor.execute(q)
+
+            # insert links
+            # TODO: optimize based on scores
+            confidence_value = 5
+
+            task_logger.debug('start insert links')
+            for idx, val in treenode_connector.items():
+                skeleton_node_id, connector_id = idx
+                q = """
+                    INSERT INTO treenode_connector (user_id, project_id,
+                        treenode_id, connector_id, relation_id, skeleton_id,
+                        confidence)
+                    VALUES ({},{},{},{},{},{},{})
+                    ON CONFLICT ON CONSTRAINT treenode_connector_project_id_treenode_id_connector_id_relation DO NOTHING;
+                    """.format(
+                    DEFAULT_IMPORT_USER,
+                    project_id,
+                    skeleton_node_id,
+                    connector_id,
+                    relations[val['type']],
+                    active_skeleton_id,
+                    confidence_value)
+
+                if with_multi:
+                    queries.append(q)
+                else:
+                    cursor.execute(q)
 
             if with_multi:
-                queries.append(q)
-            else:
-                cursor.execute(q)
-
-        # insert links
-        # TODO: optimize based on scores
-        confidence_value = 5
-
-        task_logger.debug('start insert links')
-        for idx, val in treenode_connector.items():
-            skeleton_node_id, connector_id = idx
-            q = """
-                INSERT INTO treenode_connector (user_id, project_id,
-                    treenode_id, connector_id, relation_id, skeleton_id,
-                    confidence)
-                VALUES ({},{},{},{},{},{},{})
-                ON CONFLICT ON CONSTRAINT treenode_connector_project_id_treenode_id_connector_id_relation DO NOTHING;
-                """.format(
-                DEFAULT_IMPORT_USER,
-                project_id,
-                skeleton_node_id,
-                connector_id,
-                relations[val['type']],
-                active_skeleton_id,
-                confidence_value)
-
-            if with_multi:
-                queries.append(q)
-            else:
-                cursor.execute(q)
-
-        q = 'COMMIT;'
-        if with_multi:
-            queries.append(q)
-        else:
-            cursor.execute(q)
-
-        if with_multi:
-            #task_logger.debug('run multiquery. nr queries {}'.format(len(queries))
-            task_logger.debug(f'Inserting {len(queries)} synaptic links')
-            cursor.execute('\n'.join(queries))
-            task_logger.debug('multiquery done')
+                #task_logger.debug('run multiquery. nr queries {}'.format(len(queries))
+                task_logger.debug(f'Inserting {len(queries)} synaptic links')
+                cursor.execute('\n'.join(queries))
+                task_logger.debug('multiquery done')
 
         # add tags to connectors
         if tags:
@@ -996,40 +985,14 @@ def import_autoseg_skeleton_with_synapses(project_id, user_id, import_id,
 
             queries = []
             with_multi = True
-            q = 'BEGIN;'
-            if with_multi:
-                queries.append(q)
-            else:
-                cursor.execute(q)
-
-            # insert root node
-            parent_id = ""
-            n = g2.nodes[root_skeleton_id]
-            query = """INSERT INTO treenode (id, project_id, location_x, location_y, location_z, editor_id,
-                        user_id, skeleton_id, radius) VALUES ({},{},{},{},{},{},{},{},{}) ON CONFLICT (id) DO NOTHING;
-                """.format(
-                 root_skeleton_id,
-                 project_id,
-                 n['x'],
-                 n['y'],
-                 n['z'],
-                 DEFAULT_IMPORT_USER,
-                 DEFAULT_IMPORT_USER,
-                 skeleton_class_instance_id,
-                 n['r'])
-            if with_multi:
-                queries.append(query)
-            else:
-                cursor.execute(query)
-
-            # insert all chidren
-            n_imported_nodes = 0
-            for parent_id, skeleton_node_id in new_tree.edges(data=False):
-                n = g2.nodes[skeleton_node_id]
-                query = """INSERT INTO treenode (id,project_id, location_x, location_y, location_z, editor_id,
-                            user_id, skeleton_id, radius, parent_id) VALUES ({},{},{},{},{},{},{},{},{},{}) ON CONFLICT (id) DO NOTHING;
+            with transaction.atomic():
+                # insert root node
+                parent_id = ""
+                n = g2.nodes[root_skeleton_id]
+                query = """INSERT INTO treenode (id, project_id, location_x, location_y, location_z, editor_id,
+                            user_id, skeleton_id, radius) VALUES ({},{},{},{},{},{},{},{},{}) ON CONFLICT (id) DO NOTHING;
                     """.format(
-                     skeleton_node_id,
+                     root_skeleton_id,
                      project_id,
                      n['x'],
                      n['y'],
@@ -1037,23 +1000,38 @@ def import_autoseg_skeleton_with_synapses(project_id, user_id, import_id,
                      DEFAULT_IMPORT_USER,
                      DEFAULT_IMPORT_USER,
                      skeleton_class_instance_id,
-                     n['r'],
-                    parent_id)
+                     n['r'])
                 if with_multi:
                     queries.append(query)
                 else:
                     cursor.execute(query)
-                n_imported_nodes += 1
 
-            query = 'COMMIT;'
-            if with_multi:
-                queries.append(query)
-            else:
-                cursor.execute(query)
+                # insert all chidren
+                n_imported_nodes = 0
+                for parent_id, skeleton_node_id in new_tree.edges(data=False):
+                    n = g2.nodes[skeleton_node_id]
+                    query = """INSERT INTO treenode (id,project_id, location_x, location_y, location_z, editor_id,
+                                user_id, skeleton_id, radius, parent_id) VALUES ({},{},{},{},{},{},{},{},{},{}) ON CONFLICT (id) DO NOTHING;
+                        """.format(
+                         skeleton_node_id,
+                         project_id,
+                         n['x'],
+                         n['y'],
+                         n['z'],
+                         DEFAULT_IMPORT_USER,
+                         DEFAULT_IMPORT_USER,
+                         skeleton_class_instance_id,
+                         n['r'],
+                        parent_id)
+                    if with_multi:
+                        queries.append(query)
+                    else:
+                        cursor.execute(query)
+                    n_imported_nodes += 1
 
-            task_logger.debug('run multiquery')
-            if with_multi:
-                cursor.execute('\n'.join(queries))
+                task_logger.debug('run multiquery')
+                if with_multi:
+                    cursor.execute('\n'.join(queries))
 
             if set_status:
                 synapse_import.skeleton_id = skeleton_class_instance_id
