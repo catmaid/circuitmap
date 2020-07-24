@@ -681,7 +681,7 @@
       'z': stackViewer.z,
       'fetch_upstream': this.fetch_upstream_skeletons,
       'fetch_downstream': this.fetch_downstream_skeletons,
-      'distance_threshold': this.distance_threshold,
+      'distance_threshold': -1,
       'upstream_syn_count': this.upstream_syn_count,
       'downstream_syn_count': this.downstream_syn_count,
       'active_skeleton': -1,
