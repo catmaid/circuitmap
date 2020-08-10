@@ -54,11 +54,15 @@ task_logger = get_task_logger(__name__)
 
 
 def get_links(cursor, segment_id, where='segmentid_pre'):
+    exclude_partners = list(getattr(settings, 'CIRCUITMAP_IGNORED_SEGMENT_IDS', []))
+    partner_column = 'segmentid_post' if where == 'segmentid_pre' else 'segmentid_pre'
     cursor.execute(f'''
         SELECT * FROM circuitmap_synlinks
         WHERE {where} = %(segment_id)s
+        AND {partner_column} <> ANY(%(exclude_partners)s::bigint[])
     ''', {
         'segment_id': segment_id,
+        'exclude_partners': exclude_partners,
     })
     return pd.DataFrame.from_records(cursor.fetchall(), columns=cols)
 
