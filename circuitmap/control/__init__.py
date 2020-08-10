@@ -20,7 +20,7 @@ from itertools import chain
 from cloudvolume import CloudVolume
 from cloudvolume.datasource.precomputed.skeleton.sharded import ShardedPrecomputedSkeletonSource
 
-from celery.task import task
+from celery import shared_task
 from celery.utils.log import get_task_logger
 
 from .settings import *
@@ -33,6 +33,7 @@ from catmaid.consumers import msg_user
 from catmaid.models import Message, User, UserRole
 from catmaid.control.message import notify_user
 from catmaid.control.authentication import requires_user_role
+from catmaid.tasks import LoggingTask
 
 # Make psycopg2 understand numpy 64 bit types
 import psycopg2
@@ -199,7 +200,7 @@ def test(request, project_id=None):
     task = testtask.delay()
     return JsonResponse({'msg': 'testtask'})
 
-@task()
+@shared_task
 def testtask():
     task_logger.info('testtask')
 
@@ -304,7 +305,7 @@ def fetch_synapses(request: HttpRequest, project_id=None):
         })
 
 
-@task
+@shared_task(base=LoggingTask)
 def import_synapses_and_segment(project_id, user_id, import_id, segment_id,
         fetch_upstream, fetch_downstream, upstream_syn_count,
         downstream_syn_count, message_user=True, message_payload=None,
@@ -345,7 +346,7 @@ def import_synapses_and_segment(project_id, user_id, import_id, segment_id,
     synapse_import.save()
     task_logger.debug('task: import_synapses_and_segment: done')
 
-@task()
+@shared_task()
 def import_upstream_downstream_partners(project_id, user_id, import_id, segment_id,
         fetch_upstream, fetch_downstream, upstream_syn_count,
         downstream_syn_count, message_user=True, message_payload=None,
@@ -486,7 +487,7 @@ def import_upstream_downstream_partners(project_id, user_id, import_id, segment_
         msg_user(user_id, 'circuitmap-update', payload)
 
 
-@task()
+@shared_task
 def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
         distance_threshold, active_skeleton_id, autoseg_segment_id = None,
         message_user=True, message_payload=None, with_autapses=False,
@@ -497,7 +498,7 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
     Code like this might be needed for make tasks that use asyncio (websockets
     messages) work with RabbitMQ:
 
-    @task()
+    @shared_task
     def import_synapses_for_existing_skeleton(project_id, user_id, distance_threshold, active_skeleton_id,
             autoseg_segment_id = None, message_user=True, message_payload=None):
         asyncio.run(import_synapses_for_existing_skeleton(project_id, user_id,
@@ -870,7 +871,7 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
         task_logger.debug('Created DB message and ASGI message')
 
 
-@task
+@shared_task(base=LoggingTask)
 def import_autoseg_skeleton_with_synapses(project_id, user_id, import_id,
         segment_id, message_user=True, message_payload=None,
         with_autapses=False, set_status=True, annotations=None, tags=None):
