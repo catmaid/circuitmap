@@ -146,8 +146,9 @@ def get_presynaptic_skeletons(g, segment_id, synaptic_count_threshold = 0):
     if len(g) == 0:
         return []
     res = set()
+    exclude_partners = set(getattr(settings, 'CIRCUITMAP_IGNORED_SEGMENT_IDS', []))
     for nid in g.predecessors(segment_id):
-        if nid == segment_id or nid == 0:
+        if nid == segment_id or nid in exclude_partners:
             continue
         ed = g.get_edge_data(nid, segment_id)
         if ed['count'] >= synaptic_count_threshold:
@@ -160,8 +161,10 @@ def get_postsynaptic_skeletons(g, segment_id, synaptic_count_threshold = 0):
     if len(g) == 0:
         return []
     res = set()
+    exclude_partners = set(getattr(settings, 'CIRCUITMAP_IGNORED_SEGMENT_IDS', []))
     for nid in g.successors(segment_id):
-        if nid == segment_id or nid == 0:
+        # No autapses or background links
+        if nid == segment_id or nid in exclude_partners:
             continue
         ed = g.get_edge_data(segment_id, nid)
         if ed['count'] >= synaptic_count_threshold:
