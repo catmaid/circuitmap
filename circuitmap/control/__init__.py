@@ -640,7 +640,7 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
                 if r['clust_con_offset'] > 0 and not all_pre_links_concat_remap_connector is None:
                     l = all_pre_links_concat_remap_connector.loc[r['clust_con_offset']]
                     connector_id = CONNECTORID_OFFSET + int(r['clust_con_offset']) * 10
-                    task_logger.debug('found representative connector (prelink) {} for treenode {}'.format(connector_id, treenode_id))
+                    task_logger.debug(f'found representative connector (prelink) {connector_id} for treenode {treenode_id} of {r["segmentid_pre"]} to {r["segmentid_post"]}')
                     if not connector_id in connectors:
                         connectors[connector_id] = l.to_dict()
                 else:
@@ -693,7 +693,7 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
                 if r['clust_con_offset'] > 0 and not all_post_links_concat_remap_connector is None:
                     l = all_post_links_concat_remap_connector.loc[r['clust_con_offset']]
                     connector_id = CONNECTORID_OFFSET + int(r['clust_con_offset']) * 10
-                    task_logger.debug('found representative connector (postlink) {} for treenode {}'.format(connector_id, treenode_id))
+                    task_logger.debug(f'found representative connector (postlink) {connector_id} for treenode {treenode_id} of {r["segmentid_pre"]} to {r["segmentid_post"]}')
                     if not connector_id in connectors:
                         connectors[connector_id] = l.to_dict()
                 else:
