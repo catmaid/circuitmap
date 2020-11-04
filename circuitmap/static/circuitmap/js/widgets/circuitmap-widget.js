@@ -24,6 +24,10 @@
     this.importAnnotations = CATMAID.TracingTool.getDefaultImportAnnotations();
     this.importTags = CATMAID.TracingTool.getDefaultImportTags();
 
+    // FlyWire-related variables
+    this.flywireNeuronID = null;
+    this.flywireToken = null;
+
     // The framework timeout reference, to check for updates if websockets don't
     // work.
     this.updateTimeout = null;
@@ -55,8 +59,9 @@
         let locationTab = 'Synapses and segment for current location';
         let activeSkeletonTab = 'Synapses for active skeleton';
         let settingsTab = 'General settings';
+        let flywireTab = 'FlyWire Import';
         var tabs = CATMAID.DOM.addTabGroup(controls, this.widgetID,
-            [locationTab, activeSkeletonTab, settingsTab]);
+            [locationTab, activeSkeletonTab, settingsTab, flywireTab]);
 
         let getAnnotationTitle = () => {
           let annotations = CATMAID.TracingTool.getEffectiveImportAnnotations(this.importAnnotations, this.sourceRemote);
@@ -67,6 +72,38 @@
           let tags = CATMAID.TracingTool.getEffectiveImportTags(this.importTags, this.sourceRemote);
           return `A set of tags, separated by comma, that will be added to imported synapses (connector nodes) as tags. Every occurence of "{group}" will be replaced with your primary group (or your username, should now primary group be defined). Every occurence of "{source}" will be replaced with the handle of the import source (e.g. the server name).\n\nCurrent set of tags: ${tags}`;
         };
+
+        CATMAID.DOM.appendToTab(tabs[flywireTab], [
+          {
+            type: 'text',
+            label: 'Your FlyWire Token',
+            title: 'Refresh or retrieve your token from https://globalv1.flywire-daf.com/auth/api/v1/refresh_token',
+            // value: ,
+            length: 35,
+            onchange: e => {
+              this.flywireToken = e.target.value;
+            }
+          },
+          {
+            type: 'text',
+            label: 'Import Neuron ID',
+            title: 'Enter the Neuron ID from the FlyWire.ai Production Dataset you would like to import as skeleton',
+            length: 15,
+            id: `flywire_neuronID_${this.widgetID}`,
+            onchange: e => {
+              // TODO: parseInt for uint64?
+              this.flywireNeuronID = e.target.value;
+            },
+          },
+          {
+            type: 'button',
+            label: 'Retrieve skeleton for Neuron ID',
+            title: 'Start the import process for the specified Neuron ID from FlyWire.ai',
+            onclick: e => {
+              this.fetch_flywire_neuron();
+            }
+          },
+          ]);
 
         CATMAID.DOM.appendToTab(tabs[settingsTab], [
           {
@@ -826,6 +863,64 @@
     if (widget) {
       widget.handleCircuitMapTaskUpdate(info);
     }
+  };
+
+
+  CircuitmapWidget.prototype.fetch_flywire_neuron = function() {
+    var query_data = {
+      'token': this.flywireToken,
+      'neuron_id': this.flywireNeuronID,
+    };
+    CATMAID.fetch('ext/circuitmap/' + project.id + '/flywire/fetch', 'POST', query_data)
+      .then(result => {
+        CATMAID.msg("Success", "Import process started ...");
+        this.refresh();
+
+        // Create a new fallback timeout, cancel any old one
+        // TODO: Refresh logic to implement later if useful with table on the import process etc.
+        /*
+        this.lastEdit = new Date(result.edition_time);
+        if (this.updateTimeout) {
+          window.clearTimeout(this.updateTimeout);
+        }
+        let checkForUpdate = () => {
+          CATMAID.fetch(`ext/circuitmap/${project.id}/imports/${result.import_ref}/last-update`)
+            .then(update => {
+              if (this.stopPolling || !this.pollingEnabled) {
+                return;
+              }
+              // Compare to difference of last update and refresh if there is a
+              // change.
+              let lastEdit = new Date(update.edition_time);
+              if (this.lastEdit && lastEdit > this.lastEdit) {
+                this.lastEdit = lastEdit;
+                this.refresh();
+              }
+
+              let status = update.status.toLowerCase();
+              if (status !== 'error' && status !== 'no data' && status !== 'done') {
+                window.setTimeout(checkForUpdate, this.updateCheckInterval);
+              } else {
+                this.stopPolling = true;
+                this.refresh();
+              }
+            })
+            .catch(CATMAID.handleError);
+        };
+        this.updateTimeout = window.setTimeout(checkForUpdate, this.updateCheckInterval)
+        */
+
+      })
+      .catch(e => {
+        this.updateMessage(`An error occured while fetching neurons from Flywire: ${e.message}`);
+
+        this.refresh();
+        if (e.type !== 'CircuitMapError') {
+          CATMAID.handleError(e);
+        } else {
+          CATMAID.warn(e.message);
+        }
+      });
   };
 
   CATMAID.registerWidget({

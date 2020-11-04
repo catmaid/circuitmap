@@ -123,3 +123,22 @@ class SegmentImport(models.Model):
     physical_x = models.FloatField()
     physical_y = models.FloatField()
     physical_z = models.FloatField()
+
+
+class SynlinksFlywire(models.Model):
+    """Synaptic link data mapped into the Flywire segmentation
+    """
+
+    pre_pt_root_id = models.BigIntegerField()
+    pre_pt_sv_id = models.BigIntegerField()
+    pre_pt_position_x = models.BigIntegerField()
+    pre_pt_position_y = models.BigIntegerField()
+    pre_pt_position_z = models.BigIntegerField()
+    ctr_pt_position_x = models.BigIntegerField()
+    ctr_pt_position_y = models.BigIntegerField()
+    ctr_pt_position_z = models.BigIntegerField()
+    post_pt_root_id = models.BigIntegerField()
+    post_pt_sv_id = models.BigIntegerField()
+    post_pt_position_x = models.BigIntegerField()
+    post_pt_position_y = models.BigIntegerField()
+    post_pt_position_z = models.BigIntegerField()

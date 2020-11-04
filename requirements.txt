@@ -2,3 +2,4 @@ pymaid
 cloud-volume
 pandas
 git+git://github.com/tomka/fafbseg-py.git
+git+git://github.com/schlegelp/skeletor@master

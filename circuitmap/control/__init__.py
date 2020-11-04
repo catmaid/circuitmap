@@ -211,6 +211,195 @@ def test(request, project_id=None):
 def testtask():
     task_logger.info('testtask')
 
+@shared_task
+def import_flywire_neuron(project_id, user_id, neuron_id, token):
+    task_logger.debug('task: import flywire neuron started')
+
+    task_logger.debug('neuron {} with token {}'.format(neuron_id, token))
+
+    try:
+
+        from cloudvolume import CloudVolume
+        cv = CloudVolume('graphene://https://prodv1.flywire-daf.com/segmentation/1.0/fly_v31', 
+            use_https=True, secrets={"token": token})
+
+        task_logger.debug('retrieve mesh from flywire')
+        m = cv.mesh.get(neuron_id)[neuron_id]
+
+        import skeletor as sk
+
+        task_logger.debug('simplify mesh')
+        # TODO: needs blender3d executable
+        simp = sk.simplify(m, ratio=.2)
+        task_logger.debug('fix mesh')
+        simp = sk.utilities.fix_mesh(simp, inplace=True) 
+        task_logger.debug('contract mesh')
+        cntr = sk.contract(simp, SL=40, WH0=2, epsilon=0.1, precision=1e-7, validate=False, iter_lim=4)
+
+        task_logger.info('skeletonize')
+        skeleton_sampling_dist = 50
+        swc = sk.skeletonize(cntr, output='swc', method='vertex_clusters', sampling_dist=skeleton_sampling_dist)
+
+        # map skeleton coordinates to appropriate space
+        task_logger.debug('map skeleton coordinates')
+
+        import numpy as np
+        # TODO: hard-coded multiplier factor for FAFB
+        dfa = round(swc[['x','y', 'z']]/[4,4,40]).astype(int)
+        dfanp = np.array(dfa, dtype=np.float32, order="C", copy=True)
+
+        import requests
+        task_logger.debug('transform service request')
+        urlbase = 'https://spine.janelia.org/app/transform-service/dataset/flywire_v1/s/4/values_binary/format/array_float_Nx3'
+        response = requests.post(urlbase, data=dfanp.tobytes())
+        dfnap_trafo = np.frombuffer(response.content, dtype=np.float32)
+        dfnap_trafo = dfnap_trafo.reshape( (dfnap_trafo.shape[0]//2,2) )
+        dfanp[:,0] = dfanp[:,0] + dfnap_trafo[:,0]
+        dfanp[:,1] = dfanp[:,1] + dfnap_trafo[:,1]
+        # TODO: hard-coded multiplier factor for FAFB
+        dfanp[:,0] *= 4
+        dfanp[:,1] *= 4
+        dfanp[:,2] *= 40
+        task_logger.debug('size of array {}'.format(len(dfanp)))
+        if len(dfanp) == 0:
+            raise Exception("Skeletonized mesh contains no treenodes")
+        print(dfanp)
+        swc['x'] = dfanp[:,0].astype(int)
+        swc['y'] = dfanp[:,1].astype(int)
+        swc['z'] = dfanp[:,2].astype(int)
+        # swc['radius'] = swc['radius'].astype(int)
+
+        # convert to nx Graph
+        task_logger.debug('convert swc to nx graph')
+        g = nx.Graph()
+        attrs = []
+        edgs = []
+        for idx, d in swc.iterrows():
+            # TODO: can extract radius information with skeletor?
+            attrs.append((int(d['node_id']), {'x':d['x'],'y':d['y'],'z':d['z'],'r': 0 }))
+            if d['parent_id'] != -1:
+                edgs.append((d['node_id'], d['parent_id']))
+        g.add_nodes_from(attrs)
+        g.add_edges_from(edgs)
+        nr_components = nx.number_connected_components(g)
+        if nr_components > 1:
+            largest_cc = max(nx.connected_components(g), key=len)
+            graph = g.subgraph(largest_cc)
+        else:
+            graph = g
+
+        root_skeleton_id = 0
+
+        # import skeleton into project
+        task_logger.debug('fetch relations and classes')
+
+        cursor = connection.cursor()
+        cursor.execute("SELECT id,relation_name from relation where project_id = {project_id};".format(project_id=project_id))
+        res = cursor.fetchall()
+        relations = dict([(v,u) for u,v in res])
+        
+        cursor.execute("SELECT id,class_name from class where project_id = {project_id};".format(project_id=project_id))
+        res = cursor.fetchall()
+        classes = dict([(v,u) for u,v in res])
+
+        query = """
+        INSERT INTO class_instance (user_id, project_id, class_id, name)
+                    VALUES ({},{},{},'{}') RETURNING id;
+        """.format(user_id, project_id, classes['neuron'] ,"neuron {}".format(neuron_id))
+        # """.format(DEFAULT_IMPORT_USER, project_id, classes['neuron'] ,"neuron {}".format(neuron_id))
+        task_logger.debug(query)
+        cursor.execute(query)
+        neuron_class_instance_id = cursor.fetchone()[0]
+        task_logger.debug(f'got neuron: {neuron_class_instance_id}')
+
+        query = """
+        INSERT INTO class_instance (user_id, project_id, class_id, name)
+                    VALUES ({},{},{},'{}') RETURNING id;
+        """.format(user_id, project_id, classes['skeleton'] ,"skeleton {}".format(neuron_id))
+        # """.format(DEFAULT_IMPORT_USER, project_id, classes['skeleton'] ,"skeleton {}".format(neuron_id))
+        task_logger.debug(query)
+        cursor.execute(query)
+        skeleton_class_instance_id = cursor.fetchone()[0]
+        task_logger.debug(f'got skeleton: {skeleton_class_instance_id}')
+
+        query = """
+        INSERT INTO class_instance_class_instance (user_id, project_id, class_instance_a, class_instance_b, relation_id)
+                    VALUES ({},{},{},{},{}) RETURNING id;
+        """.format(user_id, project_id, skeleton_class_instance_id, neuron_class_instance_id, relations['model_of'])          
+        # """.format(DEFAULT_IMPORT_USER, project_id, skeleton_class_instance_id, neuron_class_instance_id, relations['model_of'])
+        task_logger.debug(query)
+        cursor.execute(query)
+        cici_id = cursor.fetchone()[0]
+
+        task_logger.debug('import skeleton into project')
+        queries = []
+        with transaction.atomic():
+            # insert root node
+            parent_id = ""
+            n = graph.nodes[root_skeleton_id]
+            query = """INSERT INTO treenode (id, project_id, location_x, location_y, location_z, editor_id,
+                        user_id, skeleton_id, radius) VALUES ({},{},{},{},{},{},{},{},{}) ON CONFLICT (id) DO NOTHING;
+                """.format(
+                 root_skeleton_id,
+                 project_id,
+                 n['x'],
+                 n['y'],
+                 n['z'],
+                 user_id, # DEFAULT_IMPORT_USER,
+                 user_id, # DEFAULT_IMPORT_USER,
+                 skeleton_class_instance_id,
+                 n['r'])
+
+            queries.append(query)
+
+            # insert all chidren
+            n_imported_nodes = 0
+            
+            for parent_id, skeleton_node_id in graph.edges(data=False):
+                n = graph.nodes[skeleton_node_id]
+
+                query = """INSERT INTO treenode (id,project_id, location_x, location_y, location_z, editor_id,
+                            user_id, skeleton_id, radius, parent_id) VALUES ({},{},{},{},{},{},{},{},{},{}) ON CONFLICT (id) DO NOTHING;
+                    """.format(
+                     skeleton_node_id,
+                     project_id,
+                     n['x'],
+                     n['y'],
+                     n['z'],
+                     user_id, # DEFAULT_IMPORT_USER,
+                     user_id, # DEFAULT_IMPORT_USER,
+                     skeleton_class_instance_id,
+                     n['r'],
+                    parent_id)
+
+                queries.append(query)
+                n_imported_nodes += 1
+
+            print(queries)
+
+            task_logger.debug('run multiquery to insert skeleton into db')
+            cursor.execute('\n'.join(queries))
+
+    except Exception as ex:
+        error_message = traceback.format_exc()
+        task_logger.debug('Exception occurred: {}'.format(error_message))
+
+    task_logger.debug('task: import flywire neuron finished')
+
+
+@api_view(['POST'])
+@transaction.non_atomic_requests
+def fetch_flywire_neuron(request: HttpRequest, project_id=None):
+    neuron_id = int(request.POST.get('neuron_id', -1 ))
+    token = request.POST.get('token', "")
+    pid = int(project_id)
+
+    import_flywire_neuron.delay(pid, request.user.id,
+            neuron_id, token)
+
+    return JsonResponse({
+        'project_id': pid,
+    })
 
 @api_view(['POST'])
 @transaction.non_atomic_requests
