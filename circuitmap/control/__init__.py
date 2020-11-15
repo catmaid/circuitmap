@@ -34,6 +34,7 @@ from catmaid.models import Message, User, UserRole
 from catmaid.control.message import notify_user
 from catmaid.control.authentication import requires_user_role
 from catmaid.tasks import LoggingTask
+from catmaid.control.skeleton import _import_skeleton
 
 # Make psycopg2 understand numpy 64 bit types
 import psycopg2
@@ -212,7 +213,7 @@ def testtask():
     task_logger.info('testtask')
 
 @shared_task
-def import_flywire_neuron(project_id, user_id, neuron_id, token):
+def import_flywire_neuron(project_id, user, neuron_id, token):
     task_logger.debug('task: import flywire neuron started')
 
     task_logger.debug('neuron {} with token {}'.format(neuron_id, token))
@@ -228,22 +229,34 @@ def import_flywire_neuron(project_id, user_id, neuron_id, token):
 
         import skeletor as sk
 
+        """
         task_logger.debug('simplify mesh')
         # TODO: needs blender3d executable
         simp = sk.simplify(m, ratio=.2)
+
         task_logger.debug('fix mesh')
         simp = sk.utilities.fix_mesh(simp, inplace=True) 
+
         task_logger.debug('contract mesh')
         cntr = sk.contract(simp, SL=40, WH0=2, epsilon=0.1, precision=1e-7, validate=False, iter_lim=4)
 
         task_logger.info('skeletonize')
         skeleton_sampling_dist = 50
         swc = sk.skeletonize(cntr, output='swc', method='vertex_clusters', sampling_dist=skeleton_sampling_dist)
+        """
+
+        simp = sk.utilities.make_trimesh(m, validate=False)
+        simp = sk.utilities.fix_mesh(simp, inplace=True) 
+
+        #cntr = sk.contract(simp, SL=40, WH0=2, epsilon=0.1, precision=1e-7, validate=False, iter_lim=4)
+        cntr = sk.contract(simp, iter_lim=4)
+
+        skeleton_sampling_dist = 10
+        swc = sk.skeletonize(cntr, output='swc', method='vertex_clusters', sampling_dist=skeleton_sampling_dist)
 
         # map skeleton coordinates to appropriate space
         task_logger.debug('map skeleton coordinates')
 
-        import numpy as np
         # TODO: hard-coded multiplier factor for FAFB
         dfa = round(swc[['x','y', 'z']]/[4,4,40]).astype(int)
         dfanp = np.array(dfa, dtype=np.float32, order="C", copy=True)
@@ -260,10 +273,11 @@ def import_flywire_neuron(project_id, user_id, neuron_id, token):
         dfanp[:,0] *= 4
         dfanp[:,1] *= 4
         dfanp[:,2] *= 40
+
         task_logger.debug('size of array {}'.format(len(dfanp)))
         if len(dfanp) == 0:
             raise Exception("Skeletonized mesh contains no treenodes")
-        print(dfanp)
+
         swc['x'] = dfanp[:,0].astype(int)
         swc['y'] = dfanp[:,1].astype(int)
         swc['z'] = dfanp[:,2].astype(int)
@@ -271,114 +285,37 @@ def import_flywire_neuron(project_id, user_id, neuron_id, token):
 
         # convert to nx Graph
         task_logger.debug('convert swc to nx graph')
-        g = nx.Graph()
+        g = nx.DiGraph()
         attrs = []
         edgs = []
         for idx, d in swc.iterrows():
             # TODO: can extract radius information with skeletor?
-            attrs.append((int(d['node_id']), {'x':d['x'],'y':d['y'],'z':d['z'],'r': 0 }))
+            attrs.append((int(d['node_id']), {'x': d['x'],
+                'y': d['y'], 'z': d['z'] }))
             if d['parent_id'] != -1:
-                edgs.append((d['node_id'], d['parent_id']))
+                edgs.append((d['parent_id'], d['node_id']))
         g.add_nodes_from(attrs)
         g.add_edges_from(edgs)
-        nr_components = nx.number_connected_components(g)
+
+        nr_components = nx.number_weakly_connected_components(g)
         if nr_components > 1:
-            largest_cc = max(nx.connected_components(g), key=len)
+            largest_cc = max(nx.weakly_connected_components(g), key=len)
             graph = g.subgraph(largest_cc)
         else:
             graph = g
 
-        root_skeleton_id = 0
+        task_logger.debug("size of largest subgraph: {}".format(len(graph)))
 
-        # import skeleton into project
-        task_logger.debug('fetch relations and classes')
+        task_logger.debug("import skeleton")
+        result = _import_skeleton(user, project_id, graph)
 
-        cursor = connection.cursor()
-        cursor.execute("SELECT id,relation_name from relation where project_id = {project_id};".format(project_id=project_id))
-        res = cursor.fetchall()
-        relations = dict([(v,u) for u,v in res])
-        
-        cursor.execute("SELECT id,class_name from class where project_id = {project_id};".format(project_id=project_id))
-        res = cursor.fetchall()
-        classes = dict([(v,u) for u,v in res])
+        # result = _import_skeleton(user, project_id, graph, neuron_id = neuron_class_instance_id)
+        # task_logger.debug("returned graph")
+        #for nid, d in result["graph"].nodes(data=True):
+        #    task_logger.debug(d)
 
-        query = """
-        INSERT INTO class_instance (user_id, project_id, class_id, name)
-                    VALUES ({},{},{},'{}') RETURNING id;
-        """.format(user_id, project_id, classes['neuron'] ,"neuron {}".format(neuron_id))
-        # """.format(DEFAULT_IMPORT_USER, project_id, classes['neuron'] ,"neuron {}".format(neuron_id))
-        task_logger.debug(query)
-        cursor.execute(query)
-        neuron_class_instance_id = cursor.fetchone()[0]
-        task_logger.debug(f'got neuron: {neuron_class_instance_id}')
-
-        query = """
-        INSERT INTO class_instance (user_id, project_id, class_id, name)
-                    VALUES ({},{},{},'{}') RETURNING id;
-        """.format(user_id, project_id, classes['skeleton'] ,"skeleton {}".format(neuron_id))
-        # """.format(DEFAULT_IMPORT_USER, project_id, classes['skeleton'] ,"skeleton {}".format(neuron_id))
-        task_logger.debug(query)
-        cursor.execute(query)
-        skeleton_class_instance_id = cursor.fetchone()[0]
-        task_logger.debug(f'got skeleton: {skeleton_class_instance_id}')
-
-        query = """
-        INSERT INTO class_instance_class_instance (user_id, project_id, class_instance_a, class_instance_b, relation_id)
-                    VALUES ({},{},{},{},{}) RETURNING id;
-        """.format(user_id, project_id, skeleton_class_instance_id, neuron_class_instance_id, relations['model_of'])          
-        # """.format(DEFAULT_IMPORT_USER, project_id, skeleton_class_instance_id, neuron_class_instance_id, relations['model_of'])
-        task_logger.debug(query)
-        cursor.execute(query)
-        cici_id = cursor.fetchone()[0]
-
-        task_logger.debug('import skeleton into project')
-        queries = []
-        with transaction.atomic():
-            # insert root node
-            parent_id = ""
-            n = graph.nodes[root_skeleton_id]
-            query = """INSERT INTO treenode (id, project_id, location_x, location_y, location_z, editor_id,
-                        user_id, skeleton_id, radius) VALUES ({},{},{},{},{},{},{},{},{}) ON CONFLICT (id) DO NOTHING;
-                """.format(
-                 root_skeleton_id,
-                 project_id,
-                 n['x'],
-                 n['y'],
-                 n['z'],
-                 user_id, # DEFAULT_IMPORT_USER,
-                 user_id, # DEFAULT_IMPORT_USER,
-                 skeleton_class_instance_id,
-                 n['r'])
-
-            queries.append(query)
-
-            # insert all chidren
-            n_imported_nodes = 0
-            
-            for parent_id, skeleton_node_id in graph.edges(data=False):
-                n = graph.nodes[skeleton_node_id]
-
-                query = """INSERT INTO treenode (id,project_id, location_x, location_y, location_z, editor_id,
-                            user_id, skeleton_id, radius, parent_id) VALUES ({},{},{},{},{},{},{},{},{},{}) ON CONFLICT (id) DO NOTHING;
-                    """.format(
-                     skeleton_node_id,
-                     project_id,
-                     n['x'],
-                     n['y'],
-                     n['z'],
-                     user_id, # DEFAULT_IMPORT_USER,
-                     user_id, # DEFAULT_IMPORT_USER,
-                     skeleton_class_instance_id,
-                     n['r'],
-                    parent_id)
-
-                queries.append(query)
-                n_imported_nodes += 1
-
-            print(queries)
-
-            task_logger.debug('run multiquery to insert skeleton into db')
-            cursor.execute('\n'.join(queries))
+        task_logger.debug("import skeleton result")
+        task_logger.debug(result)
 
     except Exception as ex:
         error_message = traceback.format_exc()
@@ -394,12 +331,50 @@ def fetch_flywire_neuron(request: HttpRequest, project_id=None):
     token = request.POST.get('token', "")
     pid = int(project_id)
 
-    import_flywire_neuron.delay(pid, request.user.id,
+    import_flywire_neuron.delay(pid, request.user,
             neuron_id, token)
 
     return JsonResponse({
         'project_id': pid,
     })
+
+
+@api_view(['POST'])
+@transaction.non_atomic_requests
+def fetch_flywire_neuron_partners(request: HttpRequest, project_id=None):
+    neuron_id = int(request.POST.get('neuron_id', -1 ))
+
+    cursor = connection.cursor()
+    # postsynaptic partners
+    cursor.execute('''
+        SELECT post_pt_root_id FROM circuitmap_synlinksflywire WHERE pre_pt_root_id = %(neuron_id)s;
+    ''', {
+        'neuron_id': int(neuron_id),
+    })
+    postsyn_partners = pd.DataFrame.from_records(cursor.fetchall(), columns=["post_pt_root_id"])
+
+    # presynaptic partners
+    cursor.execute('''
+        SELECT pre_pt_root_id FROM circuitmap_synlinksflywire WHERE post_pt_root_id = %(neuron_id)s;
+    ''', {
+        'neuron_id': int(neuron_id),
+    })
+    presyn_partners = pd.DataFrame.from_records(cursor.fetchall(), columns=["pre_pt_root_id"])
+
+    response = {}
+
+    response["presynaptic_partners"] = {}
+    a = presyn_partners.groupby("pre_pt_root_id")["pre_pt_root_id"].count()
+    for idx, v in a.sort_values(ascending=False).iteritems():
+        response["presynaptic_partners"][idx] = v
+
+    response["postsynaptic_partners"] = {}
+    b = postsyn_partners.groupby("post_pt_root_id")["post_pt_root_id"].count()
+    for idx, v in b.sort_values(ascending=False).iteritems():
+        response["postsynaptic_partners"][idx] = v
+
+    return JsonResponse(response)
+
 
 @api_view(['POST'])
 @transaction.non_atomic_requests

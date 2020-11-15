@@ -27,6 +27,10 @@
     // FlyWire-related variables
     this.flywireNeuronID = null;
     this.flywireToken = null;
+    this.flywire_upstream_syn_count = 0;
+    this.flywire_downstream_syn_count = 0;
+    this.flywire_upstream_neuron_ids = "";
+    this.flywire_downstream_neuron_ids = "";
 
     // The framework timeout reference, to check for updates if websockets don't
     // work.
@@ -97,11 +101,63 @@
           },
           {
             type: 'button',
-            label: 'Retrieve skeleton for Neuron ID',
+            label: 'Retrieve skeleton for neuron ID',
             title: 'Start the import process for the specified Neuron ID from FlyWire.ai',
             onclick: e => {
               this.fetch_flywire_neuron();
             }
+          },
+          {
+            type: 'button',
+            label: 'Retrieve partner neuron IDs for neuron ID',
+            title: 'Retrieve synaptically connected partners for a neuron using the automated synful predictions from Buhmann et al.',
+            onclick: e => {
+              this.fetch_flywire_partner_neuron();
+            }
+          },
+          {
+            type: 'numeric',
+            label: 'Upstream synaptic partners to include when above ',
+            postlabel: 'synapses',
+            value: this.flywire_upstream_syn_count,
+            length: 4,
+            min: 0,
+            id: `flywire_upstream_syn_count${this.widgetID}`,
+            onchange: e => {
+              this.flywire_upstream_syn_count = parseInt(e.target.value, 10);
+            },
+          },
+          {
+            type: 'numeric',
+            label: 'Downstream synaptic partners to include when above ',
+            postlabel: 'synapses',
+            value: this.flywire_downstream_syn_count,
+            length: 4,
+            min: 0,
+            id: `flywire_downstream_syn_count${this.widgetID}`,
+            onchange: e => {
+              this.flywire_downstream_syn_count = parseInt(e.target.value, 10);
+            },
+          },
+          {
+            type: 'text',
+            label: 'Upstream neuron IDs',
+            id: `flywire_upstream_neuron_ids${this.widgetID}`,
+            value: this.flywire_upstream_neuron_ids,
+            length: 35,
+            /*onchange: e => {
+              this.flywire_upstream_neuron_ids = e.target.value.split(',').map(v => v.trim());
+            }*/
+          },
+          {
+            type: 'text',
+            label: 'Downstream neuron IDs',
+            id: `flywire_downstream_neuron_ids${this.widgetID}`,
+            value: this.flywire_downstream_neuron_ids,
+            length: 35,
+            /*onchange: e => {
+              this.flywire_upstream_neuron_ids = e.target.value.split(',').map(v => v.trim());
+            }*/
           },
           ]);
 
@@ -865,6 +921,45 @@
     }
   };
 
+  CircuitmapWidget.prototype.fetch_flywire_partner_neuron = function() {
+    var query_data = {
+      'neuron_id': this.flywireNeuronID,
+    };
+    $('#flywire_upstream_neuron_ids' + this.widgetID).val("");
+    $('#flywire_downstream_neuron_ids' + this.widgetID).val("");
+    CATMAID.fetch('ext/circuitmap/' + project.id + '/flywire/partners/fetch', 'POST', query_data)
+      .then(result => {
+        CATMAID.msg("Success", "Retrieval process started ...");
+        
+        let upstream_res = "";
+        for(let preNeuronID in result["presynaptic_partners"]) {
+          if(result["presynaptic_partners"][preNeuronID] >= this.flywire_upstream_syn_count) {
+            upstream_res += preNeuronID + ",";
+          };
+        };
+
+        let downstream_res = "";
+        for(let postNeuronID in result["postsynaptic_partners"]) {
+          if(result["postsynaptic_partners"][postNeuronID] >= this.flywire_downstream_syn_count) {
+            downstream_res += postNeuronID + ",";
+          };
+        };
+
+        $('#flywire_upstream_neuron_ids' + this.widgetID).val(upstream_res);
+        $('#flywire_downstream_neuron_ids' + this.widgetID).val(downstream_res);
+
+        this.refresh();
+      })
+      .catch(e => {
+        this.updateMessage(`An error occured while fetching neuron partners from Flywire: ${e.message}`);
+        this.refresh();
+        if (e.type !== 'CircuitMapError') {
+          CATMAID.handleError(e);
+        } else {
+          CATMAID.warn(e.message);
+        }
+      });
+  };
 
   CircuitmapWidget.prototype.fetch_flywire_neuron = function() {
     var query_data = {

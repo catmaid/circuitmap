@@ -16,4 +16,5 @@ urlpatterns = [
     url(r'^(?P<project_id>\d+)/imports/last-update$', circuitmap.control.LastGeneralImportUpdate.as_view()),
     url(r'^(?P<project_id>\d+)/imports/(?P<import_id>\d+)/last-update$', circuitmap.control.LastImportUpdate.as_view()),
     url(r'^(?P<project_id>\d+)/flywire/fetch$', circuitmap.control.fetch_flywire_neuron),
+    url(r'^(?P<project_id>\d+)/flywire/partners/fetch$', circuitmap.control.fetch_flywire_neuron_partners),
 ]
