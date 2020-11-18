@@ -81,7 +81,7 @@
           {
             type: 'text',
             label: 'Your FlyWire Token',
-            title: 'Refresh or retrieve your token from https://globalv1.flywire-daf.com/auth/api/v1/refresh_token',
+            title: 'Enter the token you received from FlyWire',
             // value: ,
             length: 35,
             onchange: e => {
@@ -89,20 +89,26 @@
             }
           },
           {
+            type: 'button',
+            label: 'Token URL',
+            onclick: e => {
+              window.open("https://globalv1.flywire-daf.com/auth/api/v1/refresh_token");
+            }
+          },
+          {
             type: 'text',
-            label: 'Import Neuron ID',
-            title: 'Enter the Neuron ID from the FlyWire.ai Production Dataset you would like to import as skeleton',
+            label: 'Neuron ID',
+            title: 'Enter the Neuron ID from the FlyWire.ai Production Dataset',
             length: 15,
             id: `flywire_neuronID_${this.widgetID}`,
             onchange: e => {
-              // TODO: parseInt for uint64?
               this.flywireNeuronID = e.target.value;
             },
           },
           {
             type: 'button',
             label: 'Retrieve skeleton for neuron ID',
-            title: 'Start the import process for the specified Neuron ID from FlyWire.ai',
+            title: 'Start the import process for the specified Neuron ID from FlyWire.ai Production dataset',
             onclick: e => {
               this.fetch_flywire_neuron();
             }
@@ -927,9 +933,11 @@
     };
     $('#flywire_upstream_neuron_ids' + this.widgetID).val("");
     $('#flywire_downstream_neuron_ids' + this.widgetID).val("");
+    CATMAID.msg("Info", "Retrieval process started ...");
     CATMAID.fetch('ext/circuitmap/' + project.id + '/flywire/partners/fetch', 'POST', query_data)
       .then(result => {
-        CATMAID.msg("Success", "Retrieval process started ...");
+        
+        CATMAID.msg("Success", "Retrieval process finished");
         
         let upstream_res = "";
         for(let preNeuronID in result["presynaptic_partners"]) {
