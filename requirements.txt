@@ -1,4 +1,4 @@
 pymaid
 cloud-volume
 pandas
-git+git://github.com/flyconnectome/fafbseg-py.git
+git+git://github.com/tomka/fafbseg-py.git

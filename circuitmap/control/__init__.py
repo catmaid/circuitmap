@@ -547,7 +547,7 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
         task_logger.debug(f'Skeleton {active_skeleton_id} has {len(skeleton)} nodes')
 
         # accessing the most recent autoseg data
-        fafbseg.use_google_storage(GOOGLE_SEGMENTATION_STORAGE)
+        fafbseg.google.segmentation.use_google_storage(GOOGLE_SEGMENTATION_STORAGE, use_threads=True)
         task_logger.debug(f'Using google storage {GOOGLE_SEGMENTATION_STORAGE}')
 
         if autoseg_segment_id is not None:
@@ -556,7 +556,7 @@ def import_synapses_for_existing_skeleton(project_id, user_id, import_id,
         else:
             # retrieve segment ids
             task_logger.debug('Getting autoseg segments')
-            segment_ids = fafbseg.segmentation.get_seg_ids(skeleton[['x','y','z']])
+            segment_ids = fafbseg.google.segmentation._get_seg_ids(skeleton[['x','y','z']])
 
             task_logger.debug(f'Found segment IDs for skeleton: {segment_ids}')
 
