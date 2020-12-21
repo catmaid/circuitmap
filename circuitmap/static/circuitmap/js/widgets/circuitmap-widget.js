@@ -52,11 +52,11 @@
     return {
       controlsID: this.idPrefix + 'controls',
       createControls: function(controls) {
-        let activeSkeletonTab = 'Synapses for active skeleton';
         let locationTab = 'Synapses and segment for current location';
+        let activeSkeletonTab = 'Synapses for active skeleton';
         let settingsTab = 'General settings';
         var tabs = CATMAID.DOM.addTabGroup(controls, this.widgetID,
-            [locationTab, settingsTab]);
+            [locationTab, activeSkeletonTab, settingsTab]);
 
         let getAnnotationTitle = () => {
           let annotations = CATMAID.TracingTool.getEffectiveImportAnnotations(this.importAnnotations, this.sourceRemote);
@@ -108,29 +108,6 @@
         ]);
 
         controls.classList.add('vertical-settings');
-
-        /*
-        // Fetch active skeleton tab
-        CATMAID.DOM.appendToTab(tabs[activeSkeletonTab], [
-          {
-            type: 'numeric',
-            id: `distance_threshold${this.widgetID}`,
-            label: 'Max dist. from skeleton (nm)',
-            title: "If the distance between the skeleton and a candidate synapse is larger, the synapse is ignored.",
-            value: this.distance_threshold,
-            length: 5,
-            min: 0,
-            onchange: e => {
-              this.distance_threshold = parentInt(e.target.value, 10);
-            }
-          },
-          {
-            type: 'button',
-            label: 'Fetch synapses for active neuron',
-            onclick: e => this.fetch(),
-          },
-        ]);
-        */
 
         // Fetch location tab
         CATMAID.DOM.appendToTab(tabs[locationTab], [
@@ -208,6 +185,35 @@
             onchange: e => {
               this.downstream_syn_count = parseInt(e.target.value, 10);
             },
+          },
+        ]);
+
+        // Fetch active skeleton tab
+        CATMAID.DOM.appendToTab(tabs[activeSkeletonTab], [
+          {
+            type: 'button',
+            label: 'Refresh results',
+            title: 'Reload the import table',
+            onclick: e => {
+              this.refresh();
+            }
+          },
+          {
+            type: 'button',
+            label: 'Fetch synapses for active neuron',
+            onclick: e => this.fetch(),
+          },
+          {
+            type: 'numeric',
+            id: `distance_threshold${this.widgetID}`,
+            label: 'Max dist. from skeleton (nm)',
+            title: "If the distance between the skeleton and a candidate synapse is larger, the synapse is ignored.",
+            value: this.distance_threshold,
+            length: 5,
+            min: 0,
+            onchange: e => {
+              this.distance_threshold = parentInt(e.target.value, 10);
+            }
           },
         ]);
 
