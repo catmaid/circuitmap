@@ -10,7 +10,6 @@ class CircuitmapConfig(AppConfig):
         return {
             'seg_name': control.SEGMENTATION_NAME,
             'seg_access_url': control.CLOUDVOLUME_URL,
-            'seg_storage': control.GOOGLE_SEGMENTATION_STORAGE,
             'skeleton_key': control.CLOUDVOLUME_SKELETONS,
             'import_user': control.DEFAULT_IMPORT_USER,
             'connector_id_offset': control.CONNECTORID_OFFSET,
