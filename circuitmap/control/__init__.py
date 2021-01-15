@@ -213,11 +213,12 @@ def testtask():
     task_logger.info('testtask')
 
 @shared_task
-def import_flywire_neuron(project_id, user, neuron_id, token):
+def import_flywire_neuron(project_id, user, import_id, neuron_id, token):
     task_logger.debug('task: import flywire neuron started')
-
     task_logger.debug('neuron {} with token {}'.format(neuron_id, token))
 
+    synapse_import = SynapseImport.objects.get(id=import_id)
+    start_time = timer()
     try:
 
         from cloudvolume import CloudVolume
@@ -229,29 +230,13 @@ def import_flywire_neuron(project_id, user, neuron_id, token):
 
         import skeletor as sk
 
-        """
-        task_logger.debug('simplify mesh')
-        # TODO: needs blender3d executable
-        simp = sk.simplify(m, ratio=.2)
-
-        task_logger.debug('fix mesh')
-        simp = sk.utilities.fix_mesh(simp, inplace=True) 
-
-        task_logger.debug('contract mesh')
-        cntr = sk.contract(simp, SL=40, WH0=2, epsilon=0.1, precision=1e-7, validate=False, iter_lim=4)
-
-        task_logger.info('skeletonize')
-        skeleton_sampling_dist = 50
-        swc = sk.skeletonize(cntr, output='swc', method='vertex_clusters', sampling_dist=skeleton_sampling_dist)
-        """
-
         simp = sk.utilities.make_trimesh(m, validate=False)
         simp = sk.utilities.fix_mesh(simp, inplace=True) 
 
         #cntr = sk.contract(simp, SL=40, WH0=2, epsilon=0.1, precision=1e-7, validate=False, iter_lim=4)
-        cntr = sk.contract(simp, iter_lim=4)
+        cntr = sk.contract(simp, iter_lim=1)
 
-        skeleton_sampling_dist = 10
+        skeleton_sampling_dist = 100
         swc = sk.skeletonize(cntr, output='swc', method='vertex_clusters', sampling_dist=skeleton_sampling_dist)
 
         # map skeleton coordinates to appropriate space
@@ -308,8 +293,11 @@ def import_flywire_neuron(project_id, user, neuron_id, token):
 
         task_logger.debug("import skeleton")
         result = _import_skeleton(user, project_id, graph)
+        synapse_import.skeleton_id = result['skeleton_id']
+        synapse_import.save()
 
         # result = _import_skeleton(user, project_id, graph, neuron_id = neuron_class_instance_id)
+
         # task_logger.debug("returned graph")
         #for nid, d in result["graph"].nodes(data=True):
         #    task_logger.debug(d)
@@ -317,9 +305,16 @@ def import_flywire_neuron(project_id, user, neuron_id, token):
         task_logger.debug("import skeleton result")
         task_logger.debug(result)
 
+        status = SynapseImport.Status.DONE
+
     except Exception as ex:
         error_message = traceback.format_exc()
         task_logger.debug('Exception occurred: {}'.format(error_message))
+        status = SynapseImport.Status.ERROR
+
+    synapse_import.status = status
+    synapse_import.runtime = timer() - start_time
+    synapse_import.save()
 
     task_logger.debug('task: import flywire neuron finished')
 
@@ -330,12 +325,29 @@ def fetch_flywire_neuron(request: HttpRequest, project_id=None):
     neuron_id = int(request.POST.get('neuron_id', -1 ))
     token = request.POST.get('token', "")
     pid = int(project_id)
+    request_id = request.POST.get('request_id')
 
-    import_flywire_neuron.delay(pid, request.user,
-            neuron_id, token)
+    with transaction.atomic():
+        synapse_import = SynapseImport.objects.create(user=request.user,
+                project_id=pid, request_id=request_id,
+                skeleton_id=neuron_id, status=SynapseImport.Status.QUEUED,
+                upstream_partner_syn_threshold=-1,
+                downsteam_partner_syn_threshold=-1,
+                distance_threshold=1000,
+                with_autapses=False, tags=[],
+                annotations=[])
+
+    def run_import():
+        import_flywire_neuron.delay(pid, request.user,
+                synapse_import.id, neuron_id, token)
+
+    transaction.on_commit(run_import)
+
 
     return JsonResponse({
         'project_id': pid,
+        'import_ref': synapse_import.id,
+        'edition_time': synapse_import.edition_time
     })
 
 
@@ -343,6 +355,7 @@ def fetch_flywire_neuron(request: HttpRequest, project_id=None):
 @transaction.non_atomic_requests
 def fetch_flywire_neuron_partners(request: HttpRequest, project_id=None):
     neuron_id = int(request.POST.get('neuron_id', -1 ))
+    max_partner_count = int(request.POST.get('max_partner_count', 0 ))
 
     cursor = connection.cursor()
     # postsynaptic partners
@@ -365,13 +378,21 @@ def fetch_flywire_neuron_partners(request: HttpRequest, project_id=None):
 
     response["presynaptic_partners"] = {}
     a = presyn_partners.groupby("pre_pt_root_id")["pre_pt_root_id"].count()
+    cnt = 0
     for idx, v in a.sort_values(ascending=False).iteritems():
         response["presynaptic_partners"][idx] = v
+        cnt += 1
+        if max_partner_count != 0 and cnt >= max_partner_count:
+            break
 
     response["postsynaptic_partners"] = {}
     b = postsyn_partners.groupby("post_pt_root_id")["post_pt_root_id"].count()
-    for idx, v in b.sort_values(ascending=False).iteritems():
+    cnt = 0
+    for idx, v in list(b.sort_values(ascending=False).iteritems())[:max_partner_count]:
         response["postsynaptic_partners"][idx] = v
+        cnt += 1
+        if max_partner_count != 0 and cnt >= max_partner_count:
+            break
 
     return JsonResponse(response)
 

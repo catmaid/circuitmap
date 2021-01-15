@@ -29,6 +29,7 @@
     this.flywireToken = null;
     this.flywire_upstream_syn_count = 0;
     this.flywire_downstream_syn_count = 0;
+    this.flywire_partner_number_count = 10;
     this.flywire_upstream_neuron_ids = "";
     this.flywire_downstream_neuron_ids = "";
 
@@ -80,7 +81,7 @@
         CATMAID.DOM.appendToTab(tabs[flywireTab], [
           {
             type: 'text',
-            label: 'Your FlyWire Token',
+            label: 'Your FlyWire Token:',
             title: 'Enter the token you received from FlyWire',
             // value: ,
             length: 35,
@@ -143,6 +144,18 @@
             id: `flywire_downstream_syn_count${this.widgetID}`,
             onchange: e => {
               this.flywire_downstream_syn_count = parseInt(e.target.value, 10);
+            },
+          },
+          {
+            type: 'numeric',
+            label: 'Only retrieve Top-',
+            postlabel: ' synaptic partners',
+            value: this.flywire_partner_number_count,
+            length: 4,
+            min: 0,
+            id: `flywire_partner_number_count${this.widgetID}`,
+            onchange: e => {
+              this.flywire_partner_number_count = parseInt(e.target.value, 10);
             },
           },
           {
@@ -930,6 +943,8 @@
   CircuitmapWidget.prototype.fetch_flywire_partner_neuron = function() {
     var query_data = {
       'neuron_id': this.flywireNeuronID,
+      'request_id': this.sourceHash,
+      'max_partner_count': this.flywire_partner_number_count
     };
     $('#flywire_upstream_neuron_ids' + this.widgetID).val("");
     $('#flywire_downstream_neuron_ids' + this.widgetID).val("");
@@ -974,14 +989,13 @@
       'token': this.flywireToken,
       'neuron_id': this.flywireNeuronID,
     };
+    this.autoSelectResultSkeleton = false;
     CATMAID.fetch('ext/circuitmap/' + project.id + '/flywire/fetch', 'POST', query_data)
       .then(result => {
         CATMAID.msg("Success", "Import process started ...");
         this.refresh();
 
         // Create a new fallback timeout, cancel any old one
-        // TODO: Refresh logic to implement later if useful with table on the import process etc.
-        /*
         this.lastEdit = new Date(result.edition_time);
         if (this.updateTimeout) {
           window.clearTimeout(this.updateTimeout);
@@ -1011,7 +1025,6 @@
             .catch(CATMAID.handleError);
         };
         this.updateTimeout = window.setTimeout(checkForUpdate, this.updateCheckInterval)
-        */
 
       })
       .catch(e => {
